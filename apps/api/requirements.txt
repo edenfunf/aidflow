@@ -11,6 +11,6 @@ httpx==0.28.1
 pyshp>=2.3,<4
 # crop/downscale the CWA radar composite before serving it to browsers
 pillow>=10,<12
-openai>=1.40,<2
+openai>=3.3.1,<4
 # multipart form parsing for photo uploads
 python-multipart==0.0.20
