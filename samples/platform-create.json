@@ -1,0 +1,11 @@
+{
+  "name": "南投縣豪雨災情通報平台",
+  "brief": "南投縣仁愛鄉因颱風帶來連續豪雨，多處山區道路可能發生坍方、土石流與積淹水。",
+  "hazards": ["typhoon", "heavy_rain", "landslide", "flood"],
+  "county": "南投縣",
+  "towns": ["仁愛鄉"],
+  "layers": ["incident_cases", "report_clusters", "citizen_reports", "heatmap", "flooding", "road_damage", "landslide", "rainfall", "water", "shelter", "fire_station", "official_alert"],
+  "report_categories": ["road_collapse", "landslide", "flooding", "road_blocked", "trapped_person", "bridge_damage"],
+  "cluster_policy": { "required_unique_reporters": 2, "radius_meters": 150, "time_window_minutes": 120 },
+  "publish": true
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aidflow.example/schemas/case-event.schema.json",
+  "title": "PublicTimelineItem",
+  "description": "One entry of a case's public timeline — derived from real CaseEvent rows, never synthesised.",
+  "type": "object",
+  "required": ["event_type", "label", "at"],
+  "properties": {
+    "event_type": { "type": "string", "enum": ["report.received", "threshold_reached", "case.created", "status_changed", "public_update", "assignment_changed"] },
+    "label": { "type": "string" },
+    "note": { "type": ["string", "null"] },
+    "to_status": { "type": ["string", "null"] },
+    "at": { "type": "string" }
+  },
+  "additionalProperties": false
+}

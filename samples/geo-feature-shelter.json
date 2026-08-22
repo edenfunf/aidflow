@@ -1,0 +1,17 @@
+{
+  "id": "moi_shelter:1995",
+  "source": "moi_shelter",
+  "layer": "shelter",
+  "type": "Point",
+  "coordinates": [120.927346, 23.554004],
+  "properties": {
+    "name": "東光基督長老教會",
+    "county": "南投縣",
+    "town": "信義鄉",
+    "capacity": 150,
+    "hazards": ["水災", "震災", "土石流"],
+    "indoor": true,
+    "status": "available",
+    "updated_at": null
+  }
+}

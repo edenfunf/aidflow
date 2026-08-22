@@ -1,0 +1,1025 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import "leaflet/dist/leaflet.css";
+@import "leaflet.markercluster/dist/MarkerCluster.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* ── AidFlow design tokens ─────────────────────────────────────────────
+   Restrained palette: neutrals carry the interface; colour is reserved for
+   severity, status, alerts, map layers and interaction. */
+:root {
+  color-scheme: light;
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f6;
+  --ink: #101828;
+  --ink-2: #344054;
+  --muted: #667085;
+  --faint: #98a2b3;
+  --line: #e4e7ec;
+  --line-2: #d0d5dd;
+  --brand: #0b2545;
+  --brand-2: #13315c;
+  --brand-ink: #ffffff;
+  --focus: #2e5aac;
+
+  /* severity: one ordered ramp, always paired with a text label */
+  --sev-low: #98a2b3;
+  --sev-medium: #dc8a0c;
+  --sev-high: #d92d20;
+  --sev-critical: #7a0c16;
+
+  /* case phase / status */
+  --st-pending: #b54708;
+  --st-active: #1d4ed8;
+  --st-done: #067647;
+  --st-dismissed: #667085;
+
+  /* map layers (categorical, validated) */
+  --ly-flooding: #2563eb;
+  --ly-road: #ea580c;
+  --ly-building: #7c3aed;
+  --ly-lifeline: #0d9488;
+  --ly-trapped: #be123c;
+  --ly-landslide: #ca8a04;
+  --ly-shelter: #067647;
+  --ly-fire: #9f1239;
+  --ly-water: #0369a1;
+  --ly-rain: #1d4ed8;
+  --ly-alert: #c2410c;
+  --ly-case: #0b2545;
+  --ly-cluster: #475467;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background-color: rgba(11, 37, 69, 0.14);
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer components {
+  .af-panel {
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .af-subtle {
+    background-color: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .af-eyebrow {
+    @apply text-[11px] font-semibold tracking-[0.12em];
+    color: var(--muted);
+  }
+  .af-h1 {
+    @apply text-xl font-semibold;
+    color: var(--ink);
+  }
+  .af-h2 {
+    @apply text-sm font-semibold;
+    color: var(--ink);
+  }
+  .af-muted {
+    color: var(--muted);
+  }
+
+  .af-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition;
+    border: 1px solid transparent;
+    line-height: 1.25rem;
+  }
+  .af-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  .af-btn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  .af-btn-primary {
+    background-color: var(--brand);
+    color: var(--brand-ink);
+  }
+  .af-btn-primary:hover:not(:disabled) {
+    background-color: var(--brand-2);
+  }
+  .af-btn-secondary {
+    background-color: var(--surface);
+    color: var(--ink-2);
+    border-color: var(--line-2);
+  }
+  .af-btn-secondary:hover:not(:disabled) {
+    background-color: var(--surface-2);
+    color: var(--ink);
+  }
+  .af-btn-ghost {
+    color: var(--ink-2);
+  }
+  .af-btn-ghost:hover:not(:disabled) {
+    background-color: var(--surface-3);
+  }
+  .af-btn-danger {
+    background-color: #fff;
+    color: var(--sev-high);
+    border-color: #f4b8b3;
+  }
+  .af-btn-danger:hover:not(:disabled) {
+    background-color: #fef3f2;
+  }
+  .af-btn-lg {
+    @apply px-4 py-2.5 text-base;
+  }
+
+  .af-label {
+    @apply block text-xs font-medium;
+    color: var(--ink-2);
+  }
+  .af-input {
+    @apply w-full rounded px-3 py-2 text-sm;
+    color: var(--ink);
+    background-color: var(--surface);
+    border: 1px solid var(--line-2);
+  }
+  .af-input::placeholder {
+    color: var(--faint);
+  }
+  .af-input:focus {
+    outline: none;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px rgba(46, 90, 172, 0.15);
+  }
+  textarea.af-input {
+    min-height: 84px;
+    resize: vertical;
+  }
+
+  .af-chip {
+    @apply inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium;
+    color: var(--ink-2);
+    background-color: var(--surface-3);
+    border: 1px solid var(--line);
+  }
+  .af-chip-on {
+    background-color: var(--brand);
+    color: var(--brand-ink);
+    border-color: var(--brand);
+  }
+
+  .af-table {
+    @apply w-full text-sm;
+  }
+  .af-table th {
+    @apply text-left text-[11px] font-semibold tracking-wide;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    background: var(--surface-2);
+  }
+  .af-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .af-table tr:last-child td {
+    border-bottom: none;
+  }
+  .af-row-hover:hover {
+    background-color: var(--surface-2);
+  }
+
+  .af-kpi {
+    padding: 12px 14px;
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .af-kpi-value {
+    @apply text-2xl font-semibold tabular-nums leading-none;
+    color: var(--ink);
+  }
+  .af-kpi-label {
+    @apply mt-1.5 text-xs;
+    color: var(--muted);
+  }
+
+  .af-divider {
+    height: 1px;
+    background-color: var(--line);
+  }
+
+  .af-skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--surface-3);
+    border-radius: 4px;
+  }
+  .af-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    animation: afSweep 1.4s infinite;
+  }
+  .af-spinner {
+    @apply inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent;
+    animation: afSpin 0.7s linear infinite;
+  }
+  .af-pulse {
+    animation: afPulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes afSweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes afSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes afPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-skeleton::after,
+  .af-spinner,
+  .af-pulse {
+    animation: none !important;
+  }
+}
+
+/* ── Leaflet ──────────────────────────────────────────────────────── */
+.leaflet-container {
+  z-index: 0;
+  font: inherit;
+  background: #e9edf1;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 6px;
+  box-shadow: 0 6px 20px -8px rgba(16, 24, 40, 0.4);
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.leaflet-popup-tip {
+  box-shadow: none;
+}
+.af-marker {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.45);
+}
+.af-marker-square {
+  border-radius: 3px;
+}
+.af-marker-selected {
+  outline: 3px solid rgba(11, 37, 69, 0.35);
+  outline-offset: 1px;
+}
+.af-marker-ring::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  opacity: 0.35;
+  animation: afPing 1.8s ease-out infinite;
+}
+@keyframes afPing {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+.marker-cluster {
+  background-clip: padding-box;
+  border-radius: 9999px;
+}
+.marker-cluster div {
+  width: 32px;
+  height: 32px;
+  margin: 4px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background-color: rgba(71, 84, 103, 0.25);
+}
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background-color: #475467;
+}
+
+/* ── HUD overlays on the situation map ───────────────────────────── */
+.af-hud {
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 18px -10px rgba(16, 24, 40, 0.35);
+}
+.af-hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.93);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px -6px rgba(16, 24, 40, 0.4);
+}
+.af-hud-chip:hover:not(:disabled) {
+  background: #fff;
+  color: var(--ink);
+}
+.af-hud-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.af-hud-chip-on {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.af-hud-chip-on:hover:not(:disabled) {
+  background: var(--brand-2);
+  color: #fff;
+}
+.af-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: transparent;
+  margin: 0;
+}
+.af-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--line-2);
+  border-radius: 2px;
+}
+.af-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: var(--brand);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.4);
+  cursor: pointer;
+}
+.af-range::-moz-range-track {
+  height: 4px;
+  background: var(--line-2);
+  border-radius: 2px;
+}
+.af-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--brand);
+  border: 2px solid #fff;
+  cursor: pointer;
+}
+.maplibregl-popup-content {
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 6px 20px -8px rgba(16, 24, 40, 0.4);
+  font-family: inherit;
+}
+.maplibregl-ctrl-group {
+  border-radius: 6px;
+  box-shadow: 0 2px 8px -6px rgba(16, 24, 40, 0.4);
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+
+/* keep MapLibre controls clear of the HUD panels */
+.maplibregl-ctrl-bottom-right {
+  bottom: 52px;
+}
+@media (min-width: 1024px) {
+  .maplibregl-ctrl-bottom-right {
+    bottom: 0;
+    right: 362px;
+  }
+}
+
+/* mobile: the compact attribution opens by default and covers the map — the
+   bottom sheet handle carries the credits instead */
+@media (max-width: 1023px) {
+  .maplibregl-ctrl-attrib {
+    display: none;
+  }
+}
+
+/* upright case pins on the situation map */
+.af-pin {
+  cursor: pointer;
+  filter: drop-shadow(0 2px 3px rgba(16, 24, 40, 0.45));
+}
+/* MapLibre positions the marker via the element's own transform — animate the
+   SVG inside instead so the two never fight */
+.af-pin svg {
+  display: block;
+  transform-origin: 50% 100%;
+  transition: transform 0.15s ease-out;
+}
+.af-pin:hover svg,
+.af-pin-selected svg {
+  transform: scale(1.12);
+}
+.af-pin:hover,
+.af-pin-selected {
+  z-index: 5;
+}
+.af-pin-selected {
+  filter: drop-shadow(0 0 0 3px rgba(11, 37, 69, 0.35)) drop-shadow(0 2px 3px rgba(16, 24, 40, 0.45));
+}
+.af-pin-dim {
+  opacity: 0.35;
+}
+.af-pin-enter svg {
+  animation: afPinDrop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
+}
+@keyframes afPinDrop {
+  0% {
+    transform: translateY(-22px) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+.af-beacon-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.af-pin-critical .af-beacon-ring {
+  animation: afRingPulse 1.5s ease-out infinite;
+}
+.af-pin-selected .af-beacon-ring {
+  stroke-width: 3.4;
+}
+@keyframes afRingPulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-pin-critical .af-beacon-ring,
+  .af-pin-enter svg {
+    animation: none;
+  }
+}
+
+
+
+/* ── live event feed ─────────────────────────────────────────────────── */
+.af-feed {
+  display: flex;
+  flex-direction: column;
+}
+.af-feed-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.af-feed-row:last-child {
+  border-bottom: none;
+}
+.af-feed-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
+  border: 1.5px solid;
+  background: var(--surface);
+}
+.af-feed-new {
+  animation: afFeedIn 0.45s ease-out both;
+}
+@keyframes afFeedIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+    background: var(--surface-3);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    background: transparent;
+  }
+}
+.af-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--st-done);
+  animation: afLiveDot 1.6s ease-in-out infinite;
+}
+@keyframes afLiveDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* timeline glyphs */
+.af-tl-icon {
+  position: absolute;
+  left: -10px;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  border: 1.5px solid;
+  background: var(--surface);
+}
+
+/* ── home hero ───────────────────────────────────────────────────────── */
+.af-hero {
+  position: relative;
+  height: clamp(420px, 62vh, 640px);
+  background: #dfe6ee;
+  overflow: hidden;
+}
+.af-hero-card {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px -18px rgba(16, 24, 40, 0.5);
+  backdrop-filter: blur(2px);
+}
+.af-spark {
+  display: block;
+}
+
+/* ── wall (kiosk) mode ──────────────────────────────────────────────── */
+.af-wall {
+  position: fixed;
+  inset: 0;
+  background: #0b1220;
+  color: #e8eef6;
+  display: grid;
+  grid-template-rows: 56px 1fr;
+}
+.af-wall-panel {
+  background: rgba(13, 22, 38, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #e8eef6;
+}
+.af-wall-panel {
+  /* charts and bars inside the wall reuse the design tokens: re-point them at the dark palette */
+  --ink: #f1f5f9;
+  --ink-2: #d2dae5;
+  --muted: #9aa8ba;
+  --faint: #6b7a8f;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.2);
+  --surface: #142034;
+  --surface-2: #182640;
+  --surface-3: #1f2f4c;
+}
+.af-wall-enter {
+  animation: afWallIn 0.5s ease-out both;
+}
+@keyframes afWallIn {
+  0% {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.af-wall-bar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.af-wall-bar > span {
+  display: block;
+  height: 100%;
+  background: #8fb4ff;
+  animation: afWallBar linear both;
+}
+@keyframes afWallBar {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* ── console dark theme (command centre) ────────────────────────────── */
+[data-console-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1420;
+  --surface: #141d2b;
+  --surface-2: #182335;
+  --surface-3: #1f2c40;
+  --ink: #eef2f7;
+  --ink-2: #c8d2df;
+  --muted: #8b99ad;
+  --faint: #5e6d82;
+  --line: #243145;
+  --line-2: #33435b;
+  --brand: #2e5aac;
+  --brand-2: #3b6fd0;
+  --focus: #6f9df2;
+  --st-active: #6f9df2;
+  --st-done: #3ccf8e;
+  --st-pending: #f0a04b;
+}
+[data-console-theme="dark"] body {
+  background-color: var(--bg);
+  color: var(--ink);
+}
+[data-console-theme="dark"] .bg-white {
+  background-color: var(--surface) !important;
+}
+[data-console-theme="dark"] .ring-white {
+  --tw-ring-color: var(--surface);
+}
+[data-console-theme="dark"] .af-skeleton {
+  background: var(--surface-3);
+}
+[data-console-theme="dark"] .af-hud-chip {
+  background: rgba(20, 29, 43, 0.92);
+  color: var(--ink-2);
+  border-color: var(--line-2);
+}
+[data-console-theme="dark"] .af-hud-chip-on {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+[data-console-theme="dark"] .maplibregl-popup-content {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+
+/* radar replay timestamp (inside the map container) */
+.af-radar-stamp {
+  position: absolute;
+  left: 10px;
+  bottom: 92px;
+  z-index: 5;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #1d2939;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+
+
+/* ── motion: pages and cards rise in; reduced-motion users get none ── */
+.af-page {
+  animation: afPageIn 0.35s ease-out both;
+}
+.af-rise {
+  animation: afRise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes afPageIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes afRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.af-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.af-panel {
+  transition: box-shadow 0.18s ease;
+}
+a.af-panel:hover,
+.af-panel-hover:hover {
+  box-shadow: 0 10px 28px -18px rgba(16, 24, 40, 0.45);
+}
+
+/* ── map loading veil: branded, fades out once the style is ready ── */
+.af-map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #e3e9ef, #d7dfe7);
+  transition: opacity 0.5s ease 0.15s, visibility 0s linear 0.7s;
+}
+.af-map-loading-done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.af-map-loading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px -18px rgba(16, 24, 40, 0.5);
+}
+.af-map-loading-bar {
+  margin-top: 8px;
+  height: 3px;
+  width: 180px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.af-map-loading-bar > span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--brand);
+  animation: afLoadBar 1.1s ease-in-out infinite;
+}
+@keyframes afLoadBar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-page,
+  .af-rise,
+  .af-map-loading-bar > span {
+    animation: none !important;
+  }
+}
+
+/* scrim behind the floating header on the system console's full-bleed map */
+.af-topfade {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.6) 45%, rgba(255, 255, 255, 0) 100%);
+}
+
+/* the success tick lands with a small pop */
+.af-check {
+  animation: afPop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+@keyframes afPop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-check {
+    animation: none;
+  }
+}
+
+/* ── handover document: a sheet of paper, ruled like an official notice ── */
+.af-doc {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.af-doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+@media (min-width: 640px) {
+  .af-doc-head {
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+}
+.af-doc-kicker {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.af-sys {
+  display: flex;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--sys-accent);
+  border-radius: 6px;
+  background: var(--sys-tint);
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.af-sys:hover {
+  background: var(--sys-tint-hover);
+  border-color: var(--sys-accent);
+  box-shadow: 0 10px 26px -20px rgba(11, 37, 69, 0.55);
+}
+.af-sys:focus-visible {
+  outline: 2px solid var(--sys-accent);
+  outline-offset: 2px;
+}
+.af-sys-no {
+  flex: none;
+  width: 26px;
+  padding-top: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-accent);
+  opacity: 0.5;
+}
+.af-sys-title {
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  transition: color 0.16s ease;
+}
+.af-sys:hover .af-sys-title {
+  color: var(--sys-accent);
+}
+.af-sys-go {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sys-accent);
+}
+.af-sys-arrow {
+  display: inline-block;
+  transition: transform 0.16s ease;
+}
+.af-sys:hover .af-sys-arrow {
+  transform: translateX(3px);
+}
+.af-sys-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(11, 37, 69, 0.09);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+@media (prefers-reduced-motion: reduce) {
+  .af-sys,
+  .af-sys-title,
+  .af-sys-arrow {
+    transition: none;
+  }
+}
+.af-doc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 28px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+@media (min-width: 640px) {
+  .af-doc-foot {
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+}
+
+/* ── generation progress: the wizard is building a system, and says so ── */
+.af-gensteps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 4px;
+}
+.af-genstep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--faint);
+  transition: color 0.2s ease;
+}
+.af-genstep-dot {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  font-size: 11px;
+  line-height: 1;
+}
+.af-genstep-run {
+  color: var(--ink);
+  font-weight: 600;
+}
+.af-genstep-run .af-genstep-dot {
+  border-color: var(--brand);
+}
+.af-genstep-done {
+  color: var(--ink-2);
+}
+.af-genstep-done .af-genstep-dot {
+  border-color: var(--st-done);
+  background: var(--st-done);
+  color: #fff;
+}

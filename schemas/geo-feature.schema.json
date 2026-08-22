@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aidflow.example/schemas/geo-feature.schema.json",
+  "title": "GeoFeature",
+  "description": "Unified map feature every official connector normalises into (Government API → Connector → Normalizer → GeoFeature → Map layer).",
+  "type": "object",
+  "required": ["id", "source", "layer", "type", "coordinates", "properties"],
+  "properties": {
+    "id": { "type": "string" },
+    "source": { "type": "string", "description": "Connector id: nantou_open_data | moi_shelter | wra | cwa | ncdr" },
+    "layer": { "type": "string", "description": "Layer key: shelter | fire_station | water | rainfall | official_alert" },
+    "type": { "type": "string", "enum": ["Point", "Polygon", "LineString"] },
+    "coordinates": { "type": "array", "description": "[lon, lat] for Point (GeoJSON order); rings for Polygon." },
+    "properties": {
+      "type": "object",
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"], "enum": ["low", "medium", "high", "critical", null] },
+        "updated_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

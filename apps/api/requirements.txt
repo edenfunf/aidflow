@@ -1,0 +1,16 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pytest==8.3.4
+httpx==0.28.1
+# shapefile parsing for ARDSWC debris-flow / landslide layers (pure python)
+pyshp>=2.3,<4
+# crop/downscale the CWA radar composite before serving it to browsers
+pillow>=10,<12
+openai>=1.40,<2
+# multipart form parsing for photo uploads
+python-multipart==0.0.20

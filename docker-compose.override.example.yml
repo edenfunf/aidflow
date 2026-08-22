@@ -1,0 +1,6 @@
+# Local override for when host port 3000 is taken: copy to docker-compose.override.yml.
+# Compose appends list fields, so `!override` (v2.24+) is needed to replace ports rather than bind both.
+services:
+  web:
+    ports: !override
+      - "3001:3000"

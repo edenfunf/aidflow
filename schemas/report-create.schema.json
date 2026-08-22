@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aidflow.example/schemas/report-create.schema.json",
+  "title": "ReportCreate",
+  "description": "Citizen disaster report submitted to POST /v1/public/platforms/{slug}/reports. lat/lon must be provided together; reports without coordinates are stored but never clustered.",
+  "type": "object",
+  "required": ["category"],
+  "properties": {
+    "category": { "type": "string", "minLength": 1, "description": "Report category key enabled on the platform (e.g. road_collapse)." },
+    "description": { "type": ["string", "null"], "maxLength": 2000 },
+    "severity": { "type": ["string", "null"], "enum": ["low", "medium", "high", "critical", null] },
+    "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+    "lon": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+    "address": { "type": ["string", "null"], "maxLength": 300, "description": "Internal only; masked on public surfaces." },
+    "town": { "type": ["string", "null"], "maxLength": 50 },
+    "reporter_role": { "type": "string", "enum": ["citizen", "village_chief", "disaster_officer", "volunteer", "community_org", "agency"], "default": "citizen" },
+    "reporter_name": { "type": ["string", "null"], "maxLength": 100, "description": "PII — never public." },
+    "reporter_contact": { "type": ["string", "null"], "maxLength": 100, "description": "PII — never public; hashed to count unique reporters." },
+    "client_key": { "type": ["string", "null"], "maxLength": 128, "description": "Stable per-device key; only a salted hash is stored." }
+  },
+  "dependentRequired": { "lat": ["lon"], "lon": ["lat"] },
+  "additionalProperties": false
+}

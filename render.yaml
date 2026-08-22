@@ -1,0 +1,32 @@
+# Render Blueprint — backend API + free Postgres.
+# Dashboard → New + → Blueprint → pick this repo; Render reads this file.
+services:
+  - type: web
+    name: aidflow-api
+    runtime: docker
+    plan: free
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /v1/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aidflow-db
+          property: connectionString
+      - key: DEMO_MODE
+        value: "true"
+      # demo: allow the Cloudflare frontend (and anything else) to call the API
+      - key: CORS_ORIGINS
+        value: "*"
+      # set to the Cloudflare Workers URL after the frontend is deployed
+      - key: WEB_PUBLIC_BASE_URL
+        sync: false
+      # optional AI drafting layer
+      - key: OPENAI_API_KEY
+        sync: false
+
+databases:
+  - name: aidflow-db
+    plan: free
+    databaseName: resqlink
+    user: resqlink

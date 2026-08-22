@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aidflow.example/schemas/platform-create.schema.json",
+  "title": "PlatformCreate",
+  "description": "The human-approved plan sent to POST /v1/agent/execute (or /v1/platforms). Core modules and dependencies are always added by the composer.",
+  "type": "object",
+  "required": ["name", "hazards"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "brief": { "type": ["string", "null"], "maxLength": 4000 },
+    "hazards": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["typhoon", "heavy_rain", "flood", "landslide", "earthquake", "barrier_lake"] } },
+    "county": { "type": ["string", "null"], "maxLength": 20 },
+    "towns": { "type": "array", "items": { "type": "string" } },
+    "modules": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Module ids from the registry (GET /v1/modules)." },
+    "layers": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Layer keys (GET /v1/modules?module_type=layer)." },
+    "report_categories": { "type": ["array", "null"], "items": { "type": "string" } },
+    "cluster_policy": {
+      "type": ["object", "null"],
+      "properties": {
+        "required_unique_reporters": { "type": ["integer", "null"], "minimum": 1, "maximum": 20 },
+        "radius_meters": { "type": ["integer", "null"], "minimum": 10, "maximum": 5000 },
+        "time_window_minutes": { "type": ["integer", "null"], "minimum": 1, "maximum": 10080 },
+        "count_anonymous_reporters": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "configuration": { "type": ["object", "null"] },
+    "publish": { "type": "boolean", "default": true }
+  },
+  "additionalProperties": false
+}

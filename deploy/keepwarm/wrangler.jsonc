@@ -1,0 +1,14 @@
+// Keep-warm worker: pings the Render backend every 5 minutes so the free
+// instance never spins down (cold starts would otherwise take 30-50s).
+// Deploy with: npx wrangler deploy   (from this folder)
+{
+  "$schema": "../../apps/web/node_modules/wrangler/config-schema.json",
+  "name": "aidflow-keepwarm",
+  "main": "src/index.js",
+  "compatibility_date": "2025-03-25",
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    // ⬇ 換成你的 Render API 網址
+    "TARGET_URL": "https://aidflow-api.onrender.com/v1/health"
+  }
+}

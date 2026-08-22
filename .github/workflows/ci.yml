@@ -1,0 +1,75 @@
+name: AidFlow CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-test:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    env:
+      # Ephemeral CI database password, managed in GitHub Secrets (no literal
+      # credential in the workflow file). compose refuses to start without it.
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start db + api
+        run: docker compose up -d --build db api
+
+      - name: Wait for API health
+        run: bash scripts/wait_for_api.sh
+
+      - name: Run pytest
+        # unit tests (domain rules, clustering, privacy, connector normalisers)
+        # plus DB-backed integration tests (planner → platform → report →
+        # cluster → case → dispatch → public timeline, demo scenario)
+        run: docker compose exec -T api pytest -q
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  frontend-build:
+    name: Frontend build (next build + tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  schema-validation:
+    name: JSON Schema validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install jsonschema
+        run: pip install jsonschema
+
+      - name: Validate schemas and samples
+        run: python scripts/validate_schemas.py

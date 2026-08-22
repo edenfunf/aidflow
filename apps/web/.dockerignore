@@ -1,0 +1,10 @@
+node_modules
+.next
+npm-debug.log
+.env*.local
+.git
+.env.production
+.open-next
+.wrangler
+wrangler.jsonc
+open-next.config.ts

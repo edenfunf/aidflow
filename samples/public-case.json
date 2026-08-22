@@ -1,0 +1,23 @@
+{
+  "id": "e69edd75-7bc1-432f-84bb-cd12d98ddff3",
+  "case_number": "NT-20260821-0001",
+  "title": "仁愛鄉道路坍方",
+  "category": "road_collapse",
+  "category_label": "道路坍方",
+  "severity": "high",
+  "status": "assigned",
+  "status_label": "已派員",
+  "phase": "active",
+  "lat": 24.024,
+  "lon": 121.157,
+  "town": "仁愛鄉",
+  "location_label": "南投縣仁愛鄉台14甲線 18K 一帶",
+  "report_count": 3,
+  "unique_reporter_count": 3,
+  "assigned_unit": "公路局中區養護工程分局埔里工務段",
+  "public_summary": null,
+  "created_at": "2026-08-21T06:35:00+00:00",
+  "updated_at": "2026-08-21T06:42:00+00:00",
+  "dispatched_at": "2026-08-21T06:42:00+00:00",
+  "resolved_at": null
+}

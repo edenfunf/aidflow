@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aidflow.example/schemas/public-case.schema.json",
+  "title": "PublicCase",
+  "description": "A government case as exposed on the public portal: coarse coordinates, masked location, no PII.",
+  "type": "object",
+  "required": ["id", "case_number", "title", "category", "severity", "status", "phase", "lat", "lon", "report_count", "unique_reporter_count", "created_at", "updated_at"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "case_number": { "type": "string" },
+    "title": { "type": "string" },
+    "category": { "type": "string" },
+    "category_label": { "type": "string" },
+    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "status": { "type": "string", "enum": ["reported", "verifying", "threshold_reached", "awaiting_dispatch", "assigned", "en_route", "on_site", "processing", "resolved", "closed", "dismissed"] },
+    "status_label": { "type": "string" },
+    "phase": { "type": "string", "enum": ["pending", "active", "done", "dismissed"] },
+    "lat": { "type": "number" },
+    "lon": { "type": "number" },
+    "town": { "type": ["string", "null"] },
+    "location_label": { "type": ["string", "null"] },
+    "report_count": { "type": "integer", "minimum": 0 },
+    "unique_reporter_count": { "type": "integer", "minimum": 0 },
+    "assigned_unit": { "type": ["string", "null"] },
+    "public_summary": { "type": ["string", "null"] },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" },
+    "dispatched_at": { "type": ["string", "null"] },
+    "resolved_at": { "type": ["string", "null"] }
+  },
+  "not": { "anyOf": [{ "required": ["reporter_name"] }, { "required": ["reporter_contact"] }, { "required": ["address"] }] },
+  "additionalProperties": false
+}

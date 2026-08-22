@@ -1,0 +1,14 @@
+// Cloudflare Workers config for the Next.js frontend (built via OpenNext).
+// Deploy with: npm run cf:deploy  (requires `npx wrangler login` once)
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aidflow-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true }
+}
