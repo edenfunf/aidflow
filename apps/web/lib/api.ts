@@ -121,6 +121,23 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
   return s ? `?${s}` : "";
 }
 
+/** Seconds since this page was loaded.
+ *
+ *  A demo platform is seeded once and then sits there; by the afternoon every
+ *  simulated vehicle would have long since parked at its incident, leaving
+ *  nothing moving on the map. The vehicle endpoints take this as `elapsed` so
+ *  the convoy sets off from its station on every fresh load. Captured at
+ *  module scope, so a full page load resets it while client-side navigation
+ *  between pages keeps one continuous journey.
+ *
+ *  Live AVL positions and real platforms ignore it entirely.
+ */
+const SESSION_START = Date.now();
+
+function sessionSeconds(): number {
+  return Math.max(0, Math.round((Date.now() - SESSION_START) / 1000));
+}
+
 export const api = {
   health: () => request<HealthResponse>("/v1/health"),
   overview: () => request<GlobalOverview>("/v1/overview"),
@@ -165,7 +182,8 @@ export const api = {
   publicLayer: (slug: string, layer: string) =>
     request<LayerResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/layers/${layer}`),
   mediaUrl: (path: string) => `${API_BASE}${path}`,
-  publicVehicles: (slug: string) => request<VehicleListResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/vehicles`),
+  publicVehicles: (slug: string) =>
+    request<VehicleListResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/vehicles?elapsed=${sessionSeconds()}`),
   publicRoutes: (slug: string) => request<RouteCollection>(`/v1/public/platforms/${encodeURIComponent(slug)}/routes`),
 
   // ── agent ──
@@ -208,7 +226,7 @@ export const api = {
   consoleLayerStatuses: (id: string) => request<{ items: LayerStatusItem[] }>(`/v1/platforms/${id}/layers`),
   consoleLayer: (id: string, layer: string) => request<LayerResponse>(`/v1/platforms/${id}/layers/${layer}`),
   audit: (id: string, limit = 200) => request<{ items: AuditEvent[] }>(`/v1/platforms/${id}/audit${qs({ limit })}`),
-  consoleVehicles: (id: string) => request<VehicleListResponse>(`/v1/platforms/${id}/vehicles`),
+  consoleVehicles: (id: string) => request<VehicleListResponse>(`/v1/platforms/${id}/vehicles?elapsed=${sessionSeconds()}`),
   consoleRoutes: (id: string) => request<RouteCollection>(`/v1/platforms/${id}/routes`),
   consoleUnits: (id: string) => request<{ items: ResponderUnit[]; total: number }>(`/v1/platforms/${id}/units`),
   caseResponders: (caseId: string) => request<{ case_id: string; category: string; items: ResponderSuggestion[] }>(`/v1/cases/${caseId}/responders`),

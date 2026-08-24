@@ -234,12 +234,20 @@ def _active_assignments(db: Session, platform: Platform) -> list[tuple[CaseAssig
 
 
 def simulate_position(assignment: CaseAssignment, case: IncidentCase, now: datetime, *, index: int = 0,
-                      loop: bool = False) -> dict | None:
+                      loop: bool = False, elapsed_s: float | None = None) -> dict | None:
     """Deterministic vehicle position from timestamps only. None = vehicle is
     back at base (nothing to show). With ``loop`` (demo platforms) a vehicle
     whose case is still 已派員／前往中 replays the trip instead of parking, so a
     demo seeded hours ago still shows traffic on the road; the output is
-    flagged ``replay`` and the UI labels it."""
+    flagged ``replay`` and the UI labels it.
+
+    ``elapsed_s`` (demo platforms only) is how long the *viewer* has had the
+    page open. A demo seeded in the morning would otherwise have every vehicle
+    parked at the scene by the afternoon — nothing left to watch. Anchoring the
+    outbound leg to the viewer's own session means each page load starts the
+    convoy at its station and lets it drive out. It never touches AVL data or a
+    real platform, and it cannot move a case's state — only where the labelled
+    simulated marker is drawn."""
     coords = (assignment.route_geojson or {}).get("coordinates") or []
     if len(coords) < 2 or assignment.departed_at is None:
         return None
@@ -257,11 +265,16 @@ def simulate_position(assignment: CaseAssignment, case: IncidentCase, now: datet
         dist = max(0.0, total - back * speed)  # returning along the same route
         lat, lon, heading = point_along(coords, dist)
         return {"lat": lat, "lon": lon, "heading": (heading + 180) % 360, "status": "returning", "progress": round(dist / total, 3) if total else 1.0, "eta_minutes": None}
-    if now < depart:
+    # seconds this vehicle has been under way; vehicles in a convoy leave 45 s apart
+    if elapsed_s is None:
+        under_way = (now - depart).total_seconds()
+    else:
+        under_way = elapsed_s - 45.0 * index
+    if under_way < 0:
         lat, lon, heading = point_along(coords, 0)
         return {"lat": lat, "lon": lon, "heading": heading, "status": "preparing", "progress": 0.0,
-                "eta_minutes": max(1, round(((depart - now).total_seconds() + travel_s) / 60))}
-    dist = (now - depart).total_seconds() * speed
+                "eta_minutes": max(1, round((-under_way + travel_s) / 60))}
+    dist = under_way * speed
     # vehicles park on the approach, a few tens of metres short of the incident
     # (and staggered), so they stay visible beside the case marker
     park_at = max(0.0, total - 35.0 - 14.0 * index)
@@ -297,12 +310,15 @@ def _avl_latest(db: Session, platform: Platform, now: datetime) -> dict[str, Veh
     return latest
 
 
-def vehicles(db: Session, platform: Platform, *, public: bool, now: datetime | None = None) -> list[dict]:
+def vehicles(db: Session, platform: Platform, *, public: bool, now: datetime | None = None,
+             elapsed_s: float | None = None) -> list[dict]:
     now = now or _now()
     out: list[dict] = []
     avl = _avl_latest(db, platform, now)
     used_avl: set[str] = set()
     loop = bool(settings.VEHICLE_SIM_LOOP_DEMO and (platform.configuration or {}).get("demo"))
+    # only a demo platform's *simulated* markers follow the viewer's session
+    session_s = elapsed_s if loop else None
     for a, c in _active_assignments(db, platform):
         unit = db.get(ResponderUnit, a.unit_id) if a.unit_id else None
         for i, v in enumerate(a.vehicles or []):
@@ -322,7 +338,7 @@ def vehicles(db: Session, platform: Platform, *, public: bool, now: datetime | N
                             "heading": ping.heading, "status": "live", "progress": None, "eta_minutes": None,
                             "source": "avl", "recorded_at": ping.recorded_at.isoformat()})
                 continue
-            sim = simulate_position(a, c, now, index=i, loop=loop)
+            sim = simulate_position(a, c, now, index=i, loop=loop, elapsed_s=session_s)
             if sim is None:
                 continue
             out.append({**base, **sim, "source": "simulated", "recorded_at": now.isoformat()})

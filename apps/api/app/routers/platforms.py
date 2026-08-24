@@ -189,8 +189,9 @@ def audit(platform_id: uuid.UUID, limit: int = Query(default=200, ge=1, le=1000)
 
 
 @router.get("/{platform_id}/vehicles", response_model=VehicleListResponse, summary="Responding vehicles (precise)")
-def vehicles(platform_id: uuid.UUID, db: Session = Depends(get_db)) -> VehicleListResponse:
-    items = responder_service.vehicles(db, _require(db, platform_id), public=False)
+def vehicles(platform_id: uuid.UUID, db: Session = Depends(get_db),
+             elapsed: float | None = Query(None, ge=0, le=86_400, description="示範平台專用：此瀏覽器開啟頁面已經過的秒數。每次載入從 0 開始，車輛就會從駐地重新出發，而不是停在早已抵達的位置。不影響 AVL 實車資料與案件狀態。")) -> VehicleListResponse:
+    items = responder_service.vehicles(db, _require(db, platform_id), public=False, elapsed_s=elapsed)
     return VehicleListResponse(items=[VehicleItem(**v) for v in items], generated_at=datetime.now(timezone.utc).isoformat(),
                                has_live=any(v["source"] == "avl" for v in items))
 

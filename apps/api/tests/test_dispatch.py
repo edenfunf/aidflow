@@ -171,3 +171,55 @@ def test_avl_pings_replace_simulation(client, platform):
 def test_dispatch_rejects_unknown_unit_and_closed_case(client, platform):
     case_id = _make_case(client, platform["slug"], lat=23.9100, lon=120.9500)
     assert client.post(f"/v1/cases/{case_id}/dispatch", json={"unit_id": "00000000-0000-0000-0000-000000000000"}).status_code == 404
+
+def test_demo_vehicles_restart_from_base_on_every_page_load(client, platform):
+    """A demo seeded hours ago must not greet a visitor with every vehicle
+    already parked at the scene: the outbound leg follows the viewer's own
+    session, so each fresh load sets the convoy off from its station."""
+    slug = platform["slug"]
+    case_id = _make_case(client, slug, lat=23.9500, lon=120.9800)
+    unit = client.get(f"/v1/cases/{case_id}/responders").json()["items"][0]["unit"]
+    client.post(f"/v1/cases/{case_id}/dispatch", json={"unit_id": unit["id"], "actor_name": "值班"})
+
+    # mark it a demo platform — that is what enables the session anchoring
+    client.patch(f"/v1/platforms/{platform['id']}", json={"configuration": {"demo": True}})
+
+    def progress(elapsed):
+        veh = client.get(f"/v1/public/platforms/{slug}/vehicles", params={"elapsed": elapsed}).json()
+        mine = sorted([v for v in veh["items"] if v["case_id"] == case_id], key=lambda v: v["vehicle_id"])
+        assert mine, "the dispatched vehicles should be listed"
+        return [(v["status"], v["progress"]) for v in mine]
+
+    at_load = progress(0)
+    assert all(p == 0.0 for _s, p in at_load), f"a fresh load must start at base: {at_load}"
+    assert all(s in ("preparing", "en_route") for s, _p in at_load), at_load
+
+    # later in the same session the convoy has moved, and moved further still
+    mid = progress(120)
+    late = progress(400)
+    assert max(p for _s, p in mid) > 0.0, f"vehicles should be under way by now: {mid}"
+    assert max(p for _s, p in late) >= max(p for _s, p in mid), (mid, late)
+
+    # convoy members leave 45 s apart, so at t=0 the second is still preparing
+    statuses = [s for s, _p in progress(20)]
+    assert "preparing" in statuses, statuses
+
+
+def test_elapsed_is_ignored_on_a_real_platform(client, platform):
+    """The parameter is a demo affordance. On a platform that is not flagged as
+    a demo it must not be able to reposition anything."""
+    slug = platform["slug"]
+    case_id = _make_case(client, slug, lat=23.9500, lon=120.9800)
+    unit = client.get(f"/v1/cases/{case_id}/responders").json()["items"][0]["unit"]
+    client.post(f"/v1/cases/{case_id}/dispatch", json={"unit_id": unit["id"], "actor_name": "值班"})
+
+    def snapshot(elapsed=None):
+        params = {"elapsed": elapsed} if elapsed is not None else {}
+        veh = client.get(f"/v1/public/platforms/{slug}/vehicles", params=params).json()
+        return sorted((v["vehicle_id"], v["status"]) for v in veh["items"] if v["case_id"] == case_id)
+
+    assert snapshot(elapsed=3_600) == snapshot(), "a real platform must ignore elapsed"
+
+    # and the parameter is bounded, so it cannot be used to ask for silly values
+    assert client.get(f"/v1/public/platforms/{slug}/vehicles", params={"elapsed": 99_999}).status_code == 422
+    assert client.get(f"/v1/public/platforms/{slug}/vehicles", params={"elapsed": -1}).status_code == 422

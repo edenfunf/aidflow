@@ -248,9 +248,10 @@ def radar_frame(stamp: str, ext: str) -> Response:
 
 
 @router.get("/platforms/{slug}/vehicles", response_model=VehicleListResponse, summary="Responding vehicles (AVL if available, else labelled simulation)")
-def vehicles(slug: str, db: Session = Depends(get_db)) -> VehicleListResponse:
+def vehicles(slug: str, db: Session = Depends(get_db),
+             elapsed: float | None = Query(None, ge=0, le=86_400, description="示範平台專用：此瀏覽器開啟頁面已經過的秒數。每次載入從 0 開始，車輛就會從駐地重新出發，而不是停在早已抵達的位置。不影響 AVL 實車資料與案件狀態。")) -> VehicleListResponse:
     platform = _platform(db, slug)
-    items = responder_service.vehicles(db, platform, public=True)
+    items = responder_service.vehicles(db, platform, public=True, elapsed_s=elapsed)
     return VehicleListResponse(items=[VehicleItem(**v) for v in items], generated_at=datetime.now(timezone.utc).isoformat(),
                                has_live=any(v["source"] == "avl" for v in items))
 

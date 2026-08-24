@@ -117,7 +117,9 @@ case.category → responders.CATEGORY_RESPONDERS → unit kinds（消防／工�
   → CaseEvent「已通報 X（管道），預計 N 分鐘抵達」＋ outbox dispatch.created
 ```
 
-車輛位置（`responder_service.vehicles`）：先取 `vehicle_positions` 內 180 秒內的 AVL ping（`source=avl`）；沒有時用派遣時間、路徑長度與平均車速推算（`source=simulated`，準備 → 前往 → 抵達 → 案件完成後返隊），完全由時間戳推導，不需背景 worker。每個單位依案件類別派出一組車輛（`domain/responders.vehicles_for`，例如受困＝消防車 ×2＋救護車、道路＝工程車 ×2）。示範平台（`configuration.demo`）且案件仍在「已派員／前往中」時，模擬車輛會循環重播整段路程（`VEHICLE_SIM_LOOP_DEMO`，回應標記 `replay`，UI 標示「示範重播」），讓幾小時前 seed 的示範仍看得到車在路上；正式平台永遠不會重播。前端每 3 秒輪詢並在兩次輪詢間內插，移動平滑，行駛中的車拖著漸層尾跡（`line-gradient`，150 秒內的軌跡）；抵達的車停在路徑終點前 35 m，縮小時再依螢幕像素往來向退後，避免被案件圖釘蓋住。
+車輛位置（`responder_service.vehicles`）：先取 `vehicle_positions` 內 180 秒內的 AVL ping（`source=avl`）；沒有時用派遣時間、路徑長度與平均車速推算（`source=simulated`，準備 → 前往 → 抵達 → 案件完成後返隊），完全由時間戳推導，不需背景 worker。每個單位依案件類別派出一組車輛（`domain/responders.vehicles_for`，例如受困＝消防車 ×2＋救護車、道路＝工程車 ×2）。示範平台（`configuration.demo`）且案件仍在「已派員／前往中」時，模擬車輛會循環重播整段路程（`VEHICLE_SIM_LOOP_DEMO`，回應標記 `replay`，UI 標示「示範重播」），讓幾小時前 seed 的示範仍看得到車在路上；正式平台永遠不會重播。
+
+**示範車輛的出發時間跟著「觀看者」走**：示範資料 seed 一次就放著，若用 `departed_at` 計算，下午再打開時每一台車早就停在災點旁，畫面上沒有東西在動。因此兩個 vehicles 端點都接受 `elapsed`（此瀏覽器開啟頁面的秒數，0–86400），前端在 `lib/api.ts` 以模組層級的 `SESSION_START` 計算後自動帶上——**每次重新載入頁面就從 0 開始，車隊從駐地重新出發**（同一車隊的車仍相隔 45 秒依序出發）。這個參數只影響「示範平台的模擬標記」：AVL 實車位置、正式平台、以及任何案件狀態都不受影響，伺服器端在 `loop` 為 false 時直接忽略它。前端每 3 秒輪詢並在兩次輪詢間內插，移動平滑，行駛中的車拖著漸層尾跡（`line-gradient`，150 秒內的軌跡）；抵達的車停在路徑終點前 35 m，縮小時再依螢幕像素往來向退後，避免被案件圖釘蓋住。
 
 
 ### 3D 視覺層次
