@@ -11,9 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+import secrets
 
 from app.core.config import settings
 from app.utils.geo import round_coord
+
+# development-only fallback: a configured salt is required outside development
+# (see settings.startup_problems), so this never applies to a real deployment
+_EPHEMERAL_SALT = secrets.token_urlsafe(32)
 
 _HOUSE_NO_RE = re.compile(r"\d+(?:[-之]\d+)?\s*號.*$")
 _LANE_ALLEY_RE = re.compile(r"\d+\s*[巷弄](?:\d+\s*[巷弄])?")
@@ -31,7 +36,8 @@ def reporter_key(contact: str | None, client_key: str | None) -> str | None:
     basis = (contact or "").strip() or (client_key or "").strip()
     if not basis:
         return None
-    digest = hashlib.sha256(f"{settings.REPORTER_HASH_SALT}:{basis}".encode("utf-8")).hexdigest()
+    salt = settings.REPORTER_HASH_SALT.strip() or _EPHEMERAL_SALT
+    digest = hashlib.sha256(f"{salt}:{basis}".encode("utf-8")).hexdigest()
     return digest[:32]
 
 

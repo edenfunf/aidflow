@@ -1,21 +1,22 @@
 """Public Disaster Portal API — everything under /v1/public is reachable
-without the API key. Only privacy-transformed data leaves here."""
+without logging in. Only privacy-transformed data leaves here; writes are rate
+limited per client IP."""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Response, APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import get_db
-from app.db.models import Platform, Report, ReportPhoto
+from app.db.models import IncidentCase, Platform, ReportPhoto
 from app.domain.case_states import CaseStatus
-from app.schemas.case import PublicCaseDetail, PublicCaseListResponse
-from app.schemas.feature import LayerResponse, LayerStatusResponse, MapFeatureCollection, VehicleItem, VehicleListResponse
+from app.schemas.case import CommunitySubmitResponse, PublicCaseDetail, PublicCaseListResponse
+from app.schemas.feature import LayerResponse, LayerStatusResponse, MapFeatureCollection
 from app.schemas.report import (
     PhotoItem,
     PublicReportListResponse,
@@ -27,17 +28,23 @@ from app.services import (
     case_service,
     cluster_service,
     media_service,
+    notification_service,
     official_data_service,
     platform_service,
     presenters,
     privacy_service,
     report_service,
-    responder_service,
     situation_service,
 )
+from app.services.case_service import CaseActionError
 from app.services.report_service import InvalidCategoryError, PlatformNotAcceptingError
+from app.utils import ratelimit
 
 router = APIRouter(prefix="/v1/public", tags=["public"])
+
+_MAX_PHOTOS_PER_REPORT = 5
+_MAX_COMMUNITY_PHOTOS = 3
+_FINISHED = (CaseStatus.closed.value, CaseStatus.dismissed.value)
 
 
 def _platform(db: Session, slug: str) -> Platform:
@@ -45,6 +52,12 @@ def _platform(db: Session, slug: str) -> Platform:
     if platform is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Platform not found")
     return platform
+
+
+def _media_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, media_service.MediaTooLargeError):
+        return HTTPException(status_code=413, detail=f"照片需小於 {settings.MEDIA_MAX_BYTES // (1024 * 1024)} MB")
+    return HTTPException(status_code=415, detail="僅接受 JPEG / PNG / WebP 照片")
 
 
 @router.get("/platforms", summary="List published platforms")
@@ -63,7 +76,8 @@ def get_situation(slug: str, db: Session = Depends(get_db)) -> SituationResponse
     return SituationResponse(**situation_service.situation(db, _platform(db, slug)))
 
 
-@router.get("/platforms/{slug}/map", response_model=MapFeatureCollection, summary="Cases / clusters / reports (de-identified)")
+@router.get("/platforms/{slug}/map", response_model=MapFeatureCollection,
+            summary="Live cases / clusters / reports (de-identified; closed cases removed)")
 def get_map(
     slug: str,
     since_hours: int | None = Query(default=None, ge=1, le=24 * 30),
@@ -80,7 +94,7 @@ def get_map(
 @router.get("/platforms/{slug}/cases", response_model=PublicCaseListResponse, summary="Public case list")
 def list_cases(
     slug: str,
-    phase: str | None = Query(default=None, description="pending | active | done | open"),
+    phase: str | None = Query(default=None, description="pending | active | community | done | open"),
     status_filter: str | None = Query(default=None, alias="status"),
     category: str | None = None,
     town: str | None = None,
@@ -115,7 +129,61 @@ def get_case(slug: str, case_id: uuid.UUID, db: Session = Depends(get_db)) -> Pu
         reports=[privacy_service.public_report_properties(r) for r in reports if r.status != "rejected"],
         photos=[PhotoItem(**media_service.to_item(p)) for p in photos],
         progress=presenters.progress(case, events),
+        can_assist=case.status == CaseStatus.community_open.value,
     )
+
+
+@router.post(
+    "/platforms/{slug}/cases/{case_id}/community-report",
+    response_model=CommunitySubmitResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="民眾回報已協助處理完成（上傳處理完成照片；免登入）",
+)
+async def community_report(
+    slug: str,
+    case_id: uuid.UUID,
+    request: Request,
+    files: list[UploadFile] = File(..., description="處理完成照片，1–3 張"),
+    note: str | None = Form(default=None, max_length=500),
+    helper_name: str | None = Form(default=None, max_length=60),
+    db: Session = Depends(get_db),
+) -> CommunitySubmitResponse:
+    ratelimit.enforce(request, "community", settings.RATE_LIMIT_REPORTS_PER_MINUTE)
+    platform = _platform(db, slug)
+    case = case_service.get_case(db, case_id)
+    if case is None or case.platform_id != platform.id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if case.status != CaseStatus.community_open.value:
+        raise HTTPException(status_code=409, detail="此案件目前不開放民眾回報處理（可能已有人回報或已結案）")
+    photos = [f for f in files if f is not None][:_MAX_COMMUNITY_PHOTOS]
+    if not photos:
+        raise HTTPException(status_code=422, detail="請至少上傳 1 張處理完成照片")
+    # validate every photo before anything is stored
+    blobs: list[tuple[bytes, str]] = []
+    for f in photos:
+        try:
+            blobs.append(media_service.prepare(await f.read(), f.content_type))
+        except (media_service.MediaTooLargeError, media_service.UnsupportedMediaError) as exc:
+            raise _media_error(exc)
+    previous = case.status
+    try:
+        case_service.community_submit(db, case, note=note, helper_name=helper_name, photo_count=len(blobs))
+    except CaseActionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    db.commit()
+    saved = 0
+    for data, ctype in blobs:
+        try:
+            media_service.save_photo(db, platform_id=platform.id, data=data, content_type=ctype, case=case,
+                                     kind="after", source="citizen", caption="民眾協助處理完成")
+            saved += 1
+        except (media_service.MediaTooLargeError, media_service.UnsupportedMediaError):
+            continue
+    db.refresh(case)
+    case_service.after_commit(db, platform, case, previous_status=previous)
+    return CommunitySubmitResponse(case=presenters.public_case(case), photos=saved,
+                                   message="感謝您協助處理！承辦人員確認照片後會結案，並將此災情自地圖撤除。")
 
 
 @router.get("/platforms/{slug}/reports", response_model=PublicReportListResponse, summary="Recent reports (de-identified)")
@@ -128,7 +196,9 @@ def list_reports(
 ) -> PublicReportListResponse:
     platform = _platform(db, slug)
     rows, total = report_service.list_reports(db, platform.id, category=category, town=town, limit=limit)
-    rows = [r for r in rows if r.status != "rejected"]
+    finished = set(db.scalars(select(IncidentCase.id).where(IncidentCase.platform_id == platform.id,
+                                                             IncidentCase.status.in_(_FINISHED))).all())
+    rows = [r for r in rows if r.status != "rejected" and r.case_id not in finished]
     return PublicReportListResponse(items=[privacy_service.public_report_properties(r) for r in rows], total=total)
 
 
@@ -141,9 +211,11 @@ def list_reports(
 def submit_report(
     slug: str,
     payload: ReportCreate,
+    request: Request,
     x_client_key: str | None = Header(default=None, alias="X-Client-Key"),
     db: Session = Depends(get_db),
 ) -> ReportCreateResponse:
+    ratelimit.enforce(request, "reports", settings.RATE_LIMIT_REPORTS_PER_MINUTE)
     platform = _platform(db, slug)
     try:
         report, cluster, case = report_service.create_report(
@@ -160,23 +232,24 @@ def submit_report(
         existing = case_service.get_case(db, report.case_id)
         case_number = existing.case_number if existing else None
     if case is not None:
-        msg = f"已有 {cluster.unique_reporter_count if cluster else policy.required_unique_reporters} 位不同回報者回報同一地點，已自動成案（{case.case_number}），進入政府待派工。"
+        msg = (f"同一地點已有 {cluster.unique_reporter_count if cluster else policy.required_unique_reporters} 位民眾回報，"
+               f"已成案（{case.case_number}），承辦人員正在審核處理方式。")
     elif report.case_id:
         msg = f"此地點已成案（{case_number}），您的回報已併入該案件。"
     elif cluster is not None:
         remaining = max(policy.required_unique_reporters - cluster.unique_reporter_count, 0)
-        msg = f"通報已收到。目前 {cluster.unique_reporter_count} 位回報者，再 {remaining} 位不同回報者確認即自動成案。" if remaining else "通報已收到。"
+        msg = ("通報已收到，縣府承辦人員會收到通知。"
+               + (f"同一地點再有 {remaining} 位民眾回報會自動成案。" if remaining else ""))
     else:
-        msg = "通報已收到（未提供座標，不參與同地點聚類）。"
+        msg = "通報已收到（未提供位置，承辦人員將另行確認）。"
+    if report.notify_opt_in:
+        msg += "處理進度會寄到您留下的 Email。"
     return ReportCreateResponse(
         report_id=report.id, status=report.status, cluster_id=report.cluster_id, case_id=case_id,
         case_number=case_number, case_created=case is not None,
         unique_reporters=cluster.unique_reporter_count if cluster else 0,
-        required_unique_reporters=policy.required_unique_reporters, message=msg,
+        required_unique_reporters=policy.required_unique_reporters, notify_opt_in=report.notify_opt_in, message=msg,
     )
-
-
-_MAX_PHOTOS_PER_REPORT = 5
 
 
 @router.post(
@@ -187,10 +260,12 @@ _MAX_PHOTOS_PER_REPORT = 5
 )
 async def upload_report_photo(
     report_id: uuid.UUID,
+    request: Request,
     file: UploadFile = File(...),
     caption: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> PhotoItem:
+    ratelimit.enforce(request, "uploads", settings.RATE_LIMIT_UPLOADS_PER_MINUTE)
     report = report_service.get_report(db, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -206,11 +281,19 @@ async def upload_report_photo(
             db, platform_id=report.platform_id, data=data, content_type=file.content_type or "",
             report=report, kind="scene", source="citizen", caption=caption,
         )
-    except media_service.MediaTooLargeError:
-        raise HTTPException(status_code=413, detail=f"照片需小於 {settings.MEDIA_MAX_BYTES // (1024 * 1024)} MB")
-    except media_service.UnsupportedMediaError:
-        raise HTTPException(status_code=415, detail="僅接受 JPEG / PNG / WebP / HEIC")
+    except (media_service.MediaTooLargeError, media_service.UnsupportedMediaError) as exc:
+        raise _media_error(exc)
     return PhotoItem(**media_service.to_item(photo))
+
+
+@router.post("/unsubscribe", summary="取消案件進度通知（信件中的連結）")
+def unsubscribe(request: Request, token: str = Query(..., min_length=10, max_length=100),
+                db: Session = Depends(get_db)) -> dict:
+    ratelimit.enforce(request, "unsubscribe", settings.RATE_LIMIT_REPORTS_PER_MINUTE)
+    report = notification_service.unsubscribe(db, token)
+    if report is None:
+        raise HTTPException(status_code=404, detail="連結無效或已取消")
+    return {"ok": True, "message": "已取消此通報的進度通知。"}
 
 
 @router.get("/media/{photo_id}", summary="Serve a public photo", include_in_schema=True)
@@ -230,9 +313,12 @@ def layer_statuses(slug: str, db: Session = Depends(get_db)) -> LayerStatusRespo
 
 
 @router.get("/platforms/{slug}/layers/{layer}", response_model=LayerResponse, summary="Official data layer (normalised GeoFeatures)")
-def get_layer(slug: str, layer: str, refresh: bool = False, db: Session = Depends(get_db)) -> LayerResponse:
+def get_layer(request: Request, slug: str, layer: str, db: Session = Depends(get_db)) -> LayerResponse:
+    # no "refresh" here on purpose: forcing an upstream fetch is a console action
+    # (platforms.py), otherwise anyone could loop us into hammering CWA / 水保署
+    ratelimit.enforce(request, "layer", settings.RATE_LIMIT_LAYERS_PER_MINUTE)
     platform = _platform(db, slug)
-    return LayerResponse(**official_data_service.get_layer(platform, layer, force=refresh))
+    return LayerResponse(**official_data_service.get_layer(platform, layer))
 
 
 @router.get("/radar/{stamp}.{ext}", summary="Cached radar composite frame (proxied from CWA)", include_in_schema=True)
@@ -245,17 +331,3 @@ def radar_frame(stamp: str, ext: str) -> Response:
     data, media = got
     # frames are immutable once observed
     return Response(content=data, media_type=media, headers={"Cache-Control": "public, max-age=86400, immutable"})
-
-
-@router.get("/platforms/{slug}/vehicles", response_model=VehicleListResponse, summary="Responding vehicles (AVL if available, else labelled simulation)")
-def vehicles(slug: str, db: Session = Depends(get_db),
-             elapsed: float | None = Query(None, ge=0, le=86_400, description="示範平台專用：此瀏覽器開啟頁面已經過的秒數。每次載入從 0 開始，車輛就會從駐地重新出發，而不是停在早已抵達的位置。不影響 AVL 實車資料與案件狀態。")) -> VehicleListResponse:
-    platform = _platform(db, slug)
-    items = responder_service.vehicles(db, platform, public=True, elapsed_s=elapsed)
-    return VehicleListResponse(items=[VehicleItem(**v) for v in items], generated_at=datetime.now(timezone.utc).isoformat(),
-                               has_live=any(v["source"] == "avl" for v in items))
-
-
-@router.get("/platforms/{slug}/routes", response_model=MapFeatureCollection, summary="Active dispatch routes (real road geometry)")
-def routes(slug: str, db: Session = Depends(get_db)) -> MapFeatureCollection:
-    return MapFeatureCollection(**responder_service.routes(db, _platform(db, slug), public=True))

@@ -2,7 +2,7 @@
 
 Every id here is stable: platforms persist module ids, the frontend switches
 on them, and tests assert on them. Adding a capability = adding a spec here
-(and implementing it); the planner picks it up automatically.
+(and implementing it); the composer picks it up automatically.
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ MODULES: tuple[ModuleSpec, ...] = (
                "reporting", surfaces=("public",), core=True, dependencies=("report_form",)),
     ModuleSpec("geo_location", "定位與地圖選點", "GPS 自動定位或在地圖上點選災情位置；無座標的通報不進入聚類。",
                "reporting", surfaces=("public",), core=True, dependencies=("report_form",)),
-    ModuleSpec("photo_upload", "現場照片上傳", "現場照片附加到通報；政府端可補前／後對照照片。",
-               "reporting", dependencies=("report_form",)),
+    ModuleSpec("photo_upload", "現場照片上傳", "現場照片附加到通報（自動移除定位等中繼資料）；民眾協助處理與政府端可補處理後照片。",
+               "reporting", core=True, dependencies=("report_form",)),
     ModuleSpec("reporter_role", "回報者身分", "民眾／村里長／防災士／志工／社區組織；受訓身分的回報在分級時加權。",
                "reporting", surfaces=("public",), dependencies=("report_form",)),
     # ── processing ───────────────────────────────────────────────────────
@@ -38,16 +38,18 @@ MODULES: tuple[ModuleSpec, ...] = (
                dependencies=("geo_cluster", "duplicate_report_merge"),
                default_config={"required_unique_reporters": 2, "radius_meters": 100,
                                "time_window_minutes": 60}),
-    ModuleSpec("incident_case_creation", "正式案件建立", "門檻達成或人工確認後建立正式案件，進入待派工。",
+    ModuleSpec("incident_case_creation", "成案", "門檻達成或承辦人工成案後建立案件，進入待審核。",
                "processing", module_type="processor", surfaces=("console",), core=True,
                dependencies=("two_report_trigger",)),
-    # ── dispatch ─────────────────────────────────────────────────────────
-    ModuleSpec("case_status", "案件狀態機", "待派工→已派員→前往中→抵達→處理中→完成→結案，只允許定義的轉換。",
-               "dispatch", surfaces=("console",), core=True),
-    ModuleSpec("case_dispatch", "派工", "縣府確認後指派處理單位與人員，公開端同步顯示已派員。",
-               "dispatch", surfaces=("console",), core=True, dependencies=("case_status",)),
-    ModuleSpec("case_assignment", "處理單位指派", "指定負責單位、帶隊人員與聯絡方式（內部可見）。",
-               "dispatch", surfaces=("console",), dependencies=("case_dispatch",)),
+    # ── review & handling ────────────────────────────────────────────────
+    ModuleSpec("case_review", "審核點（處理方式分流）", "承辦審核人員依嚴重程度審核，決定上報 EMIC、民間可處理或不成案；確認後才進入案件佇列。",
+               "handling", surfaces=("console",), core=True, dependencies=("incident_case_creation",)),
+    ModuleSpec("case_status", "案件狀態機", "待審核→已上報 EMIC→處理中→結案，或開放民眾協助→處理完成確認→結案，只允許定義的轉換。",
+               "handling", surfaces=("console",), core=True, dependencies=("case_review",)),
+    ModuleSpec("emic_report", "EMIC 上報", "上報內政部消防署 EMIC，處理進度依 EMIC 欄位呈現；介接規格確認前採人工登錄 EMIC 案號與狀態。",
+               "handling", module_type="action", surfaces=("console",), core=True, dependencies=("case_status",)),
+    ModuleSpec("community_handling", "民眾協助處理", "小型災情開放民眾協助處理，民眾上傳處理完成照片，承辦確認後結案並自地圖撤除。",
+               "handling", surfaces=("public", "console"), core=True, dependencies=("case_status", "photo_upload")),
     # ── visualization: core map + data layers ────────────────────────────
     ModuleSpec("incident_map", "互動災情地圖", "公開端與後台共用的大型互動地圖，圖層可開關、可依區域／時間／類別／狀態篩選。",
                "visualization", core=True),
@@ -59,7 +61,7 @@ MODULES: tuple[ModuleSpec, ...] = (
                "visualization", module_type="layer", layer_key="report_clusters", core=True),
     ModuleSpec("heatmap_layer", "災情熱區圖層", "通報密度熱區，快速看出哪裡最嚴重。",
                "visualization", module_type="layer", layer_key="heatmap"),
-    ModuleSpec("government_processing_layer", "政府處理中圖層", "只顯示已派員／處理中的案件，讓民眾看到政府正在處理什麼。",
+    ModuleSpec("government_processing_layer", "政府處理中圖層", "只顯示已上報 EMIC／處理中的案件，讓民眾看到政府正在處理什麼。",
                "visualization", module_type="layer", layer_key="government_processing"),
     ModuleSpec("flooding_layer", "積淹水圖層", "積淹水相關通報與案件。", "visualization",
                module_type="layer", layer_key="flooding", applicable_hazards=WATER),
@@ -147,8 +149,12 @@ MODULES: tuple[ModuleSpec, ...] = (
     ModuleSpec("personal_data_redaction", "個資去識別化", "姓名、電話、Email、IP 絕不出現在公開 API。",
                "privacy", module_type="processor", core=True),
     # ── notification ─────────────────────────────────────────────────────
-    ModuleSpec("line_notify", "LINE 推播通知", "成案、派工、完成時推播 LINE 官方帳號（未設定憑證時記錄為模擬）。",
-               "notification", module_type="action", surfaces=("console",), default_enabled=False),
+    ModuleSpec("line_group_notify", "LINE 群組通知", "有新通報、待審核或民眾回報已處理時推播至縣府 LINE 群組，提醒承辦登入後台（未設定憑證時記錄為模擬）。",
+               "notification", module_type="action", surfaces=("console",), core=True),
+    ModuleSpec("progress_subscription", "案件進度通知", "通報民眾可選填 Email 接收案件處理進度；未留資料者不受影響，可隨時取消。",
+               "notification", module_type="action", surfaces=("public",), core=True, dependencies=("report_form",)),
+    ModuleSpec("map_embed", "地圖嵌入元件", "精簡版災情地圖，供縣府網站以 iframe 嵌入（僅允許指定網域）。",
+               "public_transparency", surfaces=("public",), core=True, dependencies=("incident_map",)),
 )
 
 

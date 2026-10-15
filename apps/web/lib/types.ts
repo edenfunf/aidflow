@@ -1,19 +1,16 @@
 // API types mirroring the AidFlow backend (apps/api/app/schemas).
 
 export type Severity = "low" | "medium" | "high" | "critical";
-export type Phase = "pending" | "active" | "done" | "dismissed";
+export type Phase = "pending" | "active" | "community" | "done" | "dismissed";
 export type CaseStatus =
-  | "reported"
-  | "verifying"
-  | "threshold_reached"
-  | "awaiting_dispatch"
-  | "assigned"
-  | "en_route"
-  | "on_site"
-  | "processing"
-  | "resolved"
+  | "pending_review"
+  | "reported_emic"
+  | "emic_processing"
+  | "community_open"
+  | "community_submitted"
   | "closed"
   | "dismissed";
+export type CaseTrack = "emic" | "community";
 
 export interface ReportCategory {
   key: string;
@@ -47,7 +44,6 @@ export interface PublicPlatform {
     time_window_minutes: number | null;
   };
   contacts: { name: string; phone: string }[];
-  town_centers?: Record<string, { lat: number; lon: number }>;
   published_at: string | null;
 }
 
@@ -73,8 +69,13 @@ export interface Situation {
   last_update_at: string | null;
   cases_total: number;
   cases_open: number;
+  /** 審核中 */
   cases_pending: number;
+  /** 已上報 EMIC／處理中 */
   cases_active: number;
+  /** 開放民眾協助（含處理完成確認中） */
+  cases_community: number;
+  cases_community_submitted: number;
   cases_done: number;
   cases_high_risk: number;
   reports_total: number;
@@ -85,6 +86,7 @@ export interface Situation {
   by_category: CountByKey[];
   by_town: CountByKey[];
   by_status: CountByKey[];
+  /** open cases per severity tier — always critical, high, medium, low */
   by_severity: CountByKey[];
   trend: TrendBucket[];
 }
@@ -93,8 +95,10 @@ export interface ConsoleOverview extends Situation {
   cases_new_last_hour: number;
   reports_unclustered: number;
   reports_rejected: number;
-  median_dispatch_minutes: number | null;
-  median_resolve_minutes: number | null;
+  reports_subscribed: number;
+  median_review_minutes: number | null;
+  median_close_minutes: number | null;
+  pending_by_severity: CountByKey[];
   by_reporter_role: CountByKey[];
 }
 
@@ -102,8 +106,9 @@ export interface GlobalOverview {
   platforms_total: number;
   platforms_published: number;
   cases_open: number;
-  cases_awaiting_dispatch: number;
+  cases_pending_review: number;
   cases_active: number;
+  cases_community: number;
   reports_last_24h: number;
 }
 
@@ -117,25 +122,36 @@ export interface PublicCase {
   status: CaseStatus;
   status_label: string;
   phase: Phase;
+  track: CaseTrack | null;
+  track_label: string | null;
   lat: number;
   lon: number;
   town: string | null;
   location_label: string | null;
   report_count: number;
   unique_reporter_count: number;
+  /** 處理單位 as recorded in EMIC */
   assigned_unit: string | null;
+  /** EMIC 處理狀態文字（公開） */
+  emic_status: string | null;
   public_summary: string | null;
   created_at: string;
   updated_at: string;
-  dispatched_at: string | null;
-  resolved_at: string | null;
+  reviewed_at: string | null;
+  closed_at: string | null;
 }
 
 export interface CaseItem extends PublicCase {
   platform_id: string;
   cluster_id: string | null;
+  reviewed_by: string | null;
+  emic_case_no: string | null;
+  emic_channel: "manual" | "api" | null;
+  emic_reported_at: string | null;
+  emic_synced_at: string | null;
+  community_submitted_at: string | null;
   threshold_reached_at: string | null;
-  closed_at: string | null;
+  resolved_at: string | null;
   next_statuses: CaseStatus[];
 }
 
@@ -191,6 +207,14 @@ export interface PublicCaseDetail {
   reports: ReportPublic[];
   photos: PhotoItem[];
   progress: ProgressStep[];
+  /** 開放民眾協助處理中 — the portal shows the 「我來協助處理」 button */
+  can_assist: boolean;
+}
+
+export interface CommunitySubmitResponse {
+  case: PublicCase;
+  photos: number;
+  message: string;
 }
 
 export interface ReportInternal {
@@ -205,8 +229,12 @@ export interface ReportInternal {
   town: string | null;
   address: string | null;
   reporter_role: string;
+  /** personal data: null unless the viewer's role holds view_pii */
   reporter_name: string | null;
   reporter_contact: string | null;
+  reporter_email: string | null;
+  pii_hidden: boolean;
+  notify_opt_in: boolean;
   has_identity: boolean;
   status: string;
   cluster_id: string | null;
@@ -220,6 +248,7 @@ export interface ReportInternal {
 export interface CaseEventItem {
   id: string;
   event_type: string;
+  label: string;
   from_status: string | null;
   to_status: string | null;
   to_status_label: string | null;
@@ -228,111 +257,6 @@ export interface CaseEventItem {
   note: string | null;
   public: boolean;
   created_at: string;
-}
-
-export interface AssignmentItem {
-  id: string;
-  unit_name: string;
-  team_lead: string | null;
-  contact: string | null;
-  note: string | null;
-  status: string;
-  unit_id?: string | null;
-  route_source?: string | null;
-  distance_m?: number | null;
-  eta_minutes?: number | null;
-  vehicles?: { vehicle_id: string; kind: VehicleKind }[];
-  notified_via?: string | null;
-  notified_at?: string | null;
-  departed_at?: string | null;
-  created_at: string;
-}
-
-export type VehicleKind = "fire_engine" | "ambulance" | "police_car" | "works_truck";
-export type UnitKind = "fire" | "police" | "town_office" | "highway" | "river" | "slope" | "power" | "water_supply";
-
-export interface ResponderUnit {
-  id: string;
-  name: string;
-  kind: UnitKind;
-  kind_label: string;
-  town: string | null;
-  lat: number;
-  lon: number;
-  address: string | null;
-  phone: string | null;
-  location_source: "open_data" | "configured" | "indicative";
-  source: string | null;
-}
-
-export interface ResponderSuggestion {
-  unit: ResponderUnit;
-  kind_rank: number;
-  primary: boolean;
-  straight_m: number;
-  vehicles: { kind: VehicleKind; label: string }[];
-  distance_m: number | null;
-  eta_minutes: number | null;
-  route_source: "osrm" | "straight_line" | null;
-  route: { type: "LineString"; coordinates: [number, number][] } | null;
-}
-
-export interface DispatchResponse {
-  case: CaseItem;
-  assignment: AssignmentItem;
-  notification: { channel: string; status: string; detail: string | null; external_ref: string | null };
-}
-
-export interface VehicleItem {
-  vehicle_id: string;
-  kind: VehicleKind;
-  kind_label: string;
-  unit_name: string | null;
-  unit_kind: UnitKind | null;
-  case_id: string | null;
-  case_number: string | null;
-  case_title: string | null;
-  assignment_id: string | null;
-  route_source: string | null;
-  lat: number;
-  lon: number;
-  heading: number | null;
-  status: "preparing" | "en_route" | "on_site" | "returning" | "live";
-  progress: number | null;
-  eta_minutes: number | null;
-  source: "simulated" | "avl";
-  recorded_at: string | null;
-  replay?: boolean;
-}
-
-export interface VehicleListResponse {
-  items: VehicleItem[];
-  generated_at: string;
-  has_live: boolean;
-}
-
-export interface RouteFeature {
-  type: "Feature";
-  id: string;
-  geometry: { type: "LineString"; coordinates: [number, number][] };
-  properties: {
-    assignment_id: string;
-    case_id: string;
-    case_number: string;
-    unit_name: string;
-    unit_kind: UnitKind | null;
-    distance_m: number | null;
-    eta_minutes: number | null;
-    route_source: string | null;
-    case_status: CaseStatus;
-    vehicles: VehicleKind[];
-  };
-}
-
-export interface RouteCollection {
-  type: "FeatureCollection";
-  features: RouteFeature[];
-  generated_at: string;
 }
 
 export interface NearbyCase {
@@ -345,14 +269,28 @@ export interface NearbyCase {
   distance_m: number;
 }
 
+export interface EmicInfo {
+  mode: "manual" | "api";
+  field_map: { key: string; label: string; source: string }[];
+  status_suggestions: string[];
+}
+
 export interface CaseDetail {
   case: CaseItem;
   reports: ReportInternal[];
-  assignments: AssignmentItem[];
   events: CaseEventItem[];
   photos: PhotoItem[];
   nearby: NearbyCase[];
   reporter_roles: Record<string, number>;
+  emic: EmicInfo;
+  pii_visible: boolean;
+}
+
+export type ReviewDecision = "emic" | "community" | "dismiss";
+
+export interface CaseActionResponse {
+  case: CaseItem;
+  result?: { decision?: ReviewDecision; mode?: string; submitted?: boolean; detail?: string | null } | null;
 }
 
 export interface SubmitReportPayload {
@@ -366,6 +304,8 @@ export interface SubmitReportPayload {
   reporter_role: string;
   reporter_name?: string | null;
   reporter_contact?: string | null;
+  reporter_email?: string | null;
+  notify_opt_in?: boolean;
   client_key?: string | null;
 }
 
@@ -378,6 +318,7 @@ export interface SubmitReportResponse {
   case_created: boolean;
   unique_reporters: number;
   required_unique_reporters: number;
+  notify_opt_in: boolean;
   message: string;
 }
 
@@ -462,6 +403,7 @@ export interface PlatformDetail extends PlatformItem {
   module_configs: ModuleConfigItem[];
   public_url: string;
   console_url: string;
+  embed_url: string;
   updated_at: string;
 }
 
@@ -491,7 +433,7 @@ export interface ClusterRow {
 export interface AuditEvent {
   id: string;
   event_type: string;
-  aggregate_id: string | null;
+  aggregate_id?: string | null;
   payload: Record<string, any>;
   created_at: string;
 }
@@ -535,94 +477,96 @@ export interface ConnectorStatusItem {
   detail: string | null;
 }
 
-// ── agent ──────────────────────────────────────────────────────────────
-export interface ScenarioAnalysis {
-  region: { county: string | null; towns: string[] };
-  hazards: string[];
-  hazard_labels: string[];
-  impacts: string[];
-  impact_labels: string[];
-  reporter_roles: string[];
-  data_needs: string[];
-  summary: string;
-}
-
-export interface ModuleSuggestion {
-  id: string;
-  name: string;
-  description: string;
-  domain: string;
-  domain_label: string;
-  module_type: string;
-  recommended: boolean;
-  core: boolean;
-  implemented: boolean;
-  reason: string;
-}
-
-export interface LayerSuggestion {
-  key: string;
-  module_id: string;
-  name: string;
-  description: string;
-  recommended: boolean;
-  core: boolean;
-  source: string | null;
-  live: boolean | null;
-  reason: string;
-}
-
-export interface CategorySuggestion {
-  key: string;
-  label: string;
-  default_severity: Severity;
-  recommended: boolean;
-}
-
+// ── platform creation (災害名稱 → 平台) ─────────────────────────────────
 export interface PlatformDraft {
   name: string;
-  brief: string | null;
   hazards: string[];
   county: string | null;
   towns: string[];
-  modules: string[] | null;
-  layers: string[] | null;
-  report_categories: string[] | null;
-  cluster_policy: Partial<ClusterPolicy> | null;
+  report_categories?: string[] | null;
+  cluster_policy?: Partial<ClusterPolicy> | null;
   configuration?: Record<string, any> | null;
   publish: boolean;
 }
 
-export interface AgentPlan {
-  scenario: ScenarioAnalysis;
-  suggested_name: string;
-  suggested_modules: ModuleSuggestion[];
-  suggested_layers: LayerSuggestion[];
-  suggested_report_categories: CategorySuggestion[];
-  suggested_cluster_policy: Partial<ClusterPolicy>;
-  suggested_workflow: { step: string; label: string; detail: string }[];
-  reasons: string[];
-  intent_mode: "ai" | "rules";
-  ai_enabled: boolean;
-  note: string | null;
-  draft: PlatformDraft;
+export interface PlatformOptions {
+  hazards: { key: string; label: string }[];
+  regions: { county: string; towns: string[] }[];
 }
 
-export interface AgentExecuteResponse {
-  platform: PlatformDetail;
-  public_url: string;
-  console_url: string;
-  enabled_modules: number;
-  enabled_layers: number;
-  /** demo mode: platforms retired so test runs don't pile up */
-  retired: string[];
+export interface PlatformPreview {
+  detected_hazards: string[];
+  hazards: string[];
+  hazard_labels: string[];
+  report_categories: ReportCategory[];
+  layers: string[];
+  modules: string[];
+  suggested_name: string;
+}
+
+// ── auth ───────────────────────────────────────────────────────────────
+export type Role = "officer" | "supervisor" | "admin";
+export type Permission = "view_console" | "review_cases" | "view_pii" | "manage_platforms" | "manage_line" | "manage_users" | "view_audit";
+
+export interface Me {
+  kind: "user" | "service" | "dev";
+  id: string | null;
+  username: string | null;
+  display_name: string;
+  role: Role | null;
+  role_label: string;
+  permissions: Permission[];
+  must_change_password: boolean;
+}
+
+export interface LoginResponse {
+  token: string;
+  expires_at: string;
+  user: Me;
+}
+
+export interface UserItem {
+  id: string;
+  username: string;
+  display_name: string;
+  role: Role;
+  role_label: string;
+  active: boolean;
+  locked: boolean;
+  must_change_password: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+// ── LINE group / notifications ─────────────────────────────────────────
+export interface LineStatus {
+  token_configured: boolean;
+  webhook_enabled: boolean;
+  bound: boolean;
+  group_id_masked: string | null;
+  bound_at: string | null;
+  /** only for roles that may bind groups */
+  bind_code: string | null;
+  webhook_path: string;
+}
+
+export interface NotificationLogItem {
+  id: string;
+  channel: "line" | "email";
+  kind: string;
+  recipient: string | null;
+  status: "sent" | "simulated" | "failed" | "skipped" | "queued";
+  detail: string | null;
+  case_id: string | null;
+  created_at: string;
 }
 
 export interface HealthResponse {
   status: string;
   service: string;
-  version: string;
-  ai_enabled: boolean;
-  demo_mode: boolean;
-  api_key_required: boolean;
+  auth_required: boolean;
+  // operational detail: only returned to a signed-in console user
+  version?: string;
+  demo_mode?: boolean;
+  channels?: { line: boolean; email: boolean; emic: "manual" | "api" };
 }

@@ -12,7 +12,7 @@ def test_demo_translates_cleanly(client, county):
     draft = {"name": f"測試-{county}示範", "county": county, "towns": [town],
              "hazards": ["flood"], "report_categories": ["flooding", "road_collapse", "landslide",
                                                          "bridge_damage", "trapped_person", "other"]}
-    created = client.post("/v1/agent/execute", json=draft).json()["platform"]
+    created = client.post("/v1/platforms", json=draft).json()
     r = client.post(f"/v1/platforms/{created['id']}/demo").json()
     assert r["seeded"] is True, r
     assert r["cases"] >= 8, f"{county}: only {r['cases']} cases — sites merged"

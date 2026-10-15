@@ -4,7 +4,15 @@
 // situation map, the case-detail map and the report location picker so the
 // whole product speaks one visual language.
 
+import { setWorkerUrl } from "maplibre-gl";
 import type { ExpressionSpecification, Map as MLMap, StyleSpecification } from "maplibre-gl";
+
+// maplibre v6 resolves its worker through the bundler, which Next's webpack
+// build gets wrong (no basemap, "Worker failed to load"). We serve the worker
+// from /public instead — scripts/copy-maplibre-worker.mjs keeps it in sync.
+if (typeof window !== "undefined") {
+  setWorkerUrl("/maplibre-gl-worker.js");
+}
 
 export const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 export const TERRAIN_TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";

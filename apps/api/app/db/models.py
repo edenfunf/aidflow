@@ -26,6 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.db.crypto import EncryptedText
 from app.db.database import Base
 
 
@@ -117,7 +118,8 @@ class PlatformModuleConfig(Base):
 
 class Report(Base):
     """A single citizen (or field) report. reporter_name / reporter_contact /
-    address are PII — they never leave the internal API."""
+    reporter_email are PII — encrypted at rest and never leave the internal
+    API; address is internal and masked on public surfaces."""
 
     __tablename__ = "reports"
     __table_args__ = (
@@ -144,8 +146,16 @@ class Report(Base):
     reporter_role: Mapped[str] = mapped_column(
         Text, nullable=False, default="citizen", server_default="citizen"
     )
-    reporter_name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reporter_contact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # personal data, encrypted at rest (app/db/crypto.py)
+    reporter_name: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
+    # phone number (optional) — for the officer to call back
+    reporter_contact: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
+    # e-mail (optional) — where progress notifications go
+    reporter_email: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
+    # the reporter asked to be told how the case progresses (0014)
+    notify_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # opaque token for the one-click unsubscribe link
+    notify_token: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
     # opaque identity hash used ONLY to count unique reporters; null = anonymous
     reporter_key: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
 
@@ -220,8 +230,10 @@ class IncidentCase(Base):
     category: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     severity: Mapped[str] = mapped_column(Text, nullable=False, default="medium", server_default="medium", index=True)
     status: Mapped[str] = mapped_column(
-        Text, nullable=False, default="awaiting_dispatch", server_default="awaiting_dispatch"
+        Text, nullable=False, default="pending_review", server_default="pending_review"
     )
+    # emic | community — how the reviewer decided to handle it (kept after closing)
+    track: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     lat: Mapped[float] = mapped_column(Double, nullable=False)
     lon: Mapped[float] = mapped_column(Double, nullable=False)
     town: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
@@ -231,101 +243,96 @@ class IncidentCase(Base):
     unique_reporter_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # 處理單位 as recorded in EMIC (free text, public)
     assigned_unit: Mapped[str | None] = mapped_column(Text, nullable=True)
     public_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ── review (審核點, 0014) ──
+    reviewed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ── EMIC (0014): case number and the status text as shown in EMIC ──
+    emic_case_no: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emic_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    emic_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    emic_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # manual | api — how the case reached EMIC
+    emic_channel: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── community handling (0014) ──
+    community_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     threshold_reached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
 
-class CaseAssignment(Base):
-    """Who was sent. Contact details are internal only."""
+class User(Base):
+    """A government staff account (承辦審核人員／業務主管／系統管理者).
+    Citizens never have accounts."""
 
-    __tablename__ = "case_assignments"
-
-    id: Mapped[uuid.UUID] = _uuid_pk()
-    case_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("incident_cases.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    platform_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("platforms.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    unit_name: Mapped[str] = mapped_column(Text, nullable=False)
-    team_lead: Mapped[str | None] = mapped_column(Text, nullable=True)
-    contact: Mapped[str | None] = mapped_column(Text, nullable=True)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # active | completed | cancelled
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="active", server_default="active")
-    # dispatch integration (0013)
-    unit_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("responder_units.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    route_geojson: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    route_source: Mapped[str | None] = mapped_column(Text, nullable=True)  # osrm | straight_line
-    distance_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    eta_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    vehicles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
-    notified_via: Mapped[str | None] = mapped_column(Text, nullable=True)  # line | webhook | simulated
-    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    departed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = _created_at()
-    updated_at: Mapped[datetime] = _updated_at()
-
-
-class ResponderUnit(Base):
-    """A unit that can be dispatched: fire stations from open data (surveyed
-    coordinates) or configured agencies (indicative township-centre
-    positions). ``line_to`` is the unit's LINE user/group id for real pushes."""
-
-    __tablename__ = "responder_units"
-    __table_args__ = (UniqueConstraint("county", "external_id", name="uq_responder_units_county_external"),)
+    __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    county: Mapped[str] = mapped_column(Text, nullable=False, index=True)
-    town: Mapped[str | None] = mapped_column(Text, nullable=True)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False, index=True)
-    lat: Mapped[float] = mapped_column(Double, nullable=False)
-    lon: Mapped[float] = mapped_column(Double, nullable=False)
-    address: Mapped[str | None] = mapped_column(Text, nullable=True)
-    phone: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # open_data | configured | indicative
-    location_source: Mapped[str] = mapped_column(Text, nullable=False, default="indicative", server_default="indicative")
-    source: Mapped[str | None] = mapped_column(Text, nullable=True)
-    external_id: Mapped[str] = mapped_column(Text, nullable=False)
-    line_to: Mapped[str | None] = mapped_column(Text, nullable=True)
+    username: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # bumped on password change / deactivation: older tokens stop working
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
 
-class VehiclePosition(Base):
-    """AVL pings pushed by a fleet system (POST /v1/avl/positions). When a
-    unit has fresh pings, they replace the dispatch simulation."""
+class NotificationLog(Base):
+    """Every outbound notification — LINE group pushes to staff and e-mails to
+    subscribed reporters. The recipient is stored masked."""
 
-    __tablename__ = "vehicle_positions"
-    __table_args__ = (Index("ix_vehicle_positions_vehicle_time", "vehicle_id", "recorded_at"),)
+    __tablename__ = "notification_logs"
+    __table_args__ = (Index("ix_notification_logs_platform_created", "platform_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    unit_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("responder_units.id", ondelete="SET NULL"), nullable=True, index=True
+    platform_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("platforms.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    vehicle_id: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False, default="works_truck", server_default="works_truck")
-    lat: Mapped[float] = mapped_column(Double, nullable=False)
-    lon: Mapped[float] = mapped_column(Double, nullable=False)
-    heading: Mapped[float | None] = mapped_column(Double, nullable=True)
-    speed_kmh: Mapped[float | None] = mapped_column(Double, nullable=True)
     case_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("incident_cases.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    report_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True
+    )
+    # line | email
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    # new_report | review_needed | community_submitted | case_progress | test
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    recipient: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # sent | simulated | failed | skipped
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _created_at()
+
+
+class LineGroup(Base):
+    """LINE groups the bot has joined (seen through the webhook). A group is
+    bound to a platform by sending 「綁定 <代碼>」 in the group."""
+
+    __tablename__ = "line_groups"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    group_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    platform_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("platforms.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # joined | bound | left
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="joined", server_default="joined")
+    bound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
 
 
 class CaseEvent(Base):

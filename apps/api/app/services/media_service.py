@@ -4,12 +4,19 @@ Bytes live in a media store (local filesystem under MEDIA_ROOT — a Docker
 volume in compose; swap for object storage by replacing ``_write``/``path``);
 the database keeps metadata only. No placeholders are ever generated: when a
 report has no photo the UI shows an honest empty state.
+
+Every upload is decoded and re-encoded before it is stored: that drops EXIF /
+XMP metadata — above all the GPS position of a citizen's phone — and rejects
+files that only pretend to be images. HEIC is not accepted because it cannot be
+re-encoded here (browsers convert iPhone photos to JPEG on upload).
 """
 from __future__ import annotations
 
+import io
 import uuid
 from pathlib import Path
 
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,8 +28,10 @@ ALLOWED_TYPES: dict[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
-    "image/heic": "heic",
 }
+_PIL_FORMAT = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}
+# longest edge kept; phones shoot 4000+ px, the portal never needs that
+MAX_EDGE_PX = 2560
 KINDS = ("scene", "before", "after")
 
 
@@ -48,9 +57,40 @@ def _sniff(data: bytes, declared: str) -> str:
         return "image/png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
-    if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1"):
-        return "image/heic"
     return declared
+
+
+def strip_metadata(data: bytes, ctype: str) -> bytes:
+    """Decode → apply the EXIF orientation → re-encode without any metadata.
+    Raises UnsupportedMediaError when the bytes are not a decodable image."""
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+            img = ImageOps.exif_transpose(img)
+            if max(img.size) > MAX_EDGE_PX:
+                img.thumbnail((MAX_EDGE_PX, MAX_EDGE_PX))
+            fmt = _PIL_FORMAT[ctype]
+            if fmt == "JPEG" and img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            out = io.BytesIO()
+            opts: dict = {"quality": 88} if fmt in ("JPEG", "WEBP") else {"optimize": True}
+            # no exif= / pnginfo= / icc_profile= → nothing but pixels is written
+            img.save(out, format=fmt, **opts)
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise UnsupportedMediaError() from exc
+
+
+def prepare(data: bytes, content_type: str | None) -> tuple[bytes, str]:
+    """Size check, type sniffing and metadata stripping. Returns the bytes to
+    store and their content type; raises MediaTooLargeError /
+    UnsupportedMediaError."""
+    if len(data) > settings.MEDIA_MAX_BYTES:
+        raise MediaTooLargeError()
+    ctype = _sniff(data, (content_type or "").split(";")[0].strip().lower())
+    if ctype not in ALLOWED_TYPES:
+        raise UnsupportedMediaError()
+    return strip_metadata(data, ctype), ctype
 
 
 def public_url(photo: ReportPhoto) -> str:
@@ -69,11 +109,7 @@ def save_photo(
     source: str = "citizen",
     caption: str | None = None,
 ) -> ReportPhoto:
-    if len(data) > settings.MEDIA_MAX_BYTES:
-        raise MediaTooLargeError()
-    ctype = _sniff(data, (content_type or "").split(";")[0].strip().lower())
-    if ctype not in ALLOWED_TYPES:
-        raise UnsupportedMediaError()
+    data, ctype = prepare(data, content_type)
     if kind not in KINDS:
         kind = "scene"
     photo_id = uuid.uuid4()

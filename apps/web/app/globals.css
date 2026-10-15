@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import "leaflet/dist/leaflet.css";
-@import "leaflet.markercluster/dist/MarkerCluster.css";
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 /* ── AidFlow design tokens ─────────────────────────────────────────────
@@ -35,6 +33,7 @@
   /* case phase / status */
   --st-pending: #b54708;
   --st-active: #1d4ed8;
+  --st-community: #0e7490;
   --st-done: #067647;
   --st-dismissed: #667085;
 
@@ -84,15 +83,15 @@
     border-radius: 6px;
   }
   .af-eyebrow {
-    @apply text-[11px] font-semibold tracking-[0.12em];
+    @apply text-[13px] font-semibold tracking-[0.1em];
     color: var(--muted);
   }
   .af-h1 {
-    @apply text-xl font-semibold;
+    @apply text-2xl font-semibold;
     color: var(--ink);
   }
   .af-h2 {
-    @apply text-sm font-semibold;
+    @apply text-base font-semibold;
     color: var(--ink);
   }
   .af-muted {
@@ -100,7 +99,7 @@
   }
 
   .af-btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition;
+    @apply inline-flex items-center justify-center gap-1.5 rounded px-3.5 py-2 text-sm font-medium transition;
     border: 1px solid transparent;
     line-height: 1.25rem;
   }
@@ -142,15 +141,15 @@
     background-color: #fef3f2;
   }
   .af-btn-lg {
-    @apply px-4 py-2.5 text-base;
+    @apply px-5 py-3 text-lg;
   }
 
   .af-label {
-    @apply block text-xs font-medium;
+    @apply block text-sm font-medium;
     color: var(--ink-2);
   }
   .af-input {
-    @apply w-full rounded px-3 py-2 text-sm;
+    @apply w-full rounded px-3 py-2.5 text-base;
     color: var(--ink);
     background-color: var(--surface);
     border: 1px solid var(--line-2);
@@ -169,7 +168,7 @@
   }
 
   .af-chip {
-    @apply inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium;
+    @apply inline-flex items-center gap-1 rounded px-2.5 py-1 text-[13px] font-medium;
     color: var(--ink-2);
     background-color: var(--surface-3);
     border: 1px solid var(--line);
@@ -184,7 +183,7 @@
     @apply w-full text-sm;
   }
   .af-table th {
-    @apply text-left text-[11px] font-semibold tracking-wide;
+    @apply text-left text-[13px] font-semibold tracking-wide;
     color: var(--muted);
     border-bottom: 1px solid var(--line);
     padding: 8px 10px;
@@ -272,51 +271,6 @@
   }
 }
 
-/* ── Leaflet ──────────────────────────────────────────────────────── */
-.leaflet-container {
-  z-index: 0;
-  font: inherit;
-  background: #e9edf1;
-}
-.leaflet-popup-content-wrapper {
-  border-radius: 6px;
-  box-shadow: 0 6px 20px -8px rgba(16, 24, 40, 0.4);
-  padding: 0;
-}
-.leaflet-popup-content {
-  margin: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.leaflet-popup-tip {
-  box-shadow: none;
-}
-.af-marker {
-  display: grid;
-  place-items: center;
-  border-radius: 9999px;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.45);
-}
-.af-marker-square {
-  border-radius: 3px;
-}
-.af-marker-selected {
-  outline: 3px solid rgba(11, 37, 69, 0.35);
-  outline-offset: 1px;
-}
-.af-marker-ring::before {
-  content: "";
-  position: absolute;
-  inset: -8px;
-  border-radius: 9999px;
-  border: 2px solid currentColor;
-  opacity: 0.35;
-  animation: afPing 1.8s ease-out infinite;
-}
 @keyframes afPing {
   0% {
     transform: scale(0.6);
@@ -365,9 +319,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 5px 10px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--ink-2);
   background: rgba(255, 255, 255, 0.93);
@@ -430,9 +384,9 @@
 }
 .maplibregl-popup-content {
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
+  padding: 11px 13px;
+  font-size: 14px;
+  line-height: 1.55;
   box-shadow: 0 6px 20px -8px rgba(16, 24, 40, 0.4);
   font-family: inherit;
 }
@@ -451,7 +405,7 @@
 @media (min-width: 1024px) {
   .maplibregl-ctrl-bottom-right {
     bottom: 0;
-    right: 362px;
+    right: 386px;
   }
 }
 
@@ -700,6 +654,7 @@
   --st-active: #6f9df2;
   --st-done: #3ccf8e;
   --st-pending: #f0a04b;
+  --st-community: #4fc3d9;
 }
 [data-console-theme="dark"] body {
   background-color: var(--bg);
@@ -736,9 +691,9 @@
   left: 10px;
   bottom: 92px;
   z-index: 5;
-  padding: 3px 8px;
+  padding: 5px 10px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   color: #1d2939;
   background: rgba(255, 255, 255, 0.9);
@@ -889,9 +844,9 @@ a.af-panel:hover,
   }
 }
 .af-doc-kicker {
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   color: var(--muted);
 }
 .af-sys {
@@ -924,7 +879,7 @@ a.af-panel:hover,
   opacity: 0.5;
 }
 .af-sys-title {
-  font-size: 17.5px;
+  font-size: 19.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -993,7 +948,7 @@ a.af-panel:hover,
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--faint);
   transition: color 0.2s ease;
 }

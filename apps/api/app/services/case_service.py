@@ -1,9 +1,12 @@
-"""Incident case lifecycle (modules: incident_case_creation, case_status,
-case_dispatch, case_assignment, public_timeline).
+"""Incident case lifecycle (modules: incident_case_creation, case_review,
+case_status, emic_report, community_handling, public_timeline).
 
-Every change goes through ``transition``/``assign``/``add_update`` so that the
+Every change goes through ``transition`` (or a function built on it) so the
 state machine is enforced, a CaseEvent row is written (public timeline) and
 the outbox receives an audit event in the same transaction.
+
+Notifications are *not* sent from here — callers commit first and then call
+``after_commit`` so nobody is told about a change that rolled back.
 """
 from __future__ import annotations
 
@@ -15,14 +18,20 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import CaseAssignment, CaseEvent, IncidentCase, Platform, Report, ReportCluster, ReportPhoto
+from app.connectors import emic
+from app.connectors.base import ConnectorError
+from app.core.config import settings
+from app.db.models import CaseEvent, IncidentCase, Platform, Report, ReportCluster, ReportPhoto
 from app.domain.case_states import (
-    ACTIVE_STATUSES,
+    COMMUNITY_STATUSES,
     DONE_STATUSES,
+    EMIC_STATUSES,
     PENDING_STATUSES,
+    QUEUED_STATUSES,
     CaseStatus,
     assert_transition,
     public_label,
+    track_of,
 )
 from app.domain.categories import category_label, severity_rank
 from app.services import notification_service, outbox_service, privacy_service
@@ -32,8 +41,16 @@ class CaseNotFoundError(Exception):
     pass
 
 
+class CaseActionError(Exception):
+    """The action does not apply to the case in its current state."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# case numbers carry the local (Taiwan, UTC+8, no DST) date an officer would say
+_TAIWAN = timezone(timedelta(hours=8))
 
 
 def _prefix(platform: Platform) -> str:
@@ -49,7 +66,7 @@ def next_case_number(db: Session, platform: Platform, at: datetime | None = None
     n = db.scalar(
         select(func.count()).select_from(IncidentCase).where(IncidentCase.platform_id == platform.id)
     ) or 0
-    return f"{_prefix(platform)}-{at:%Y%m%d}-{int(n) + 1 + offset:04d}"
+    return f"{_prefix(platform)}-{at.astimezone(_TAIWAN):%Y%m%d}-{int(n) + 1 + offset:04d}"
 
 
 def _insert_case(db: Session, platform: Platform, case: IncidentCase, at: datetime) -> None:
@@ -105,9 +122,11 @@ def _event(
             "platform_id": str(case.platform_id),
             "case_id": str(case.id),
             "case_number": case.case_number,
+            "title": case.title,
             "from_status": from_status,
             "to_status": to_status,
             "actor_role": actor_role,
+            "actor_name": actor_name,
             "public": public,
             **(payload or {}),
         },
@@ -123,6 +142,7 @@ def _location_label(reports: list[Report], town: str | None) -> str:
     return f"{town}一帶" if town else "位置待確認"
 
 
+# ── creation ──────────────────────────────────────────────────────────────
 def create_case_from_cluster(
     db: Session,
     platform: Platform,
@@ -132,20 +152,19 @@ def create_case_from_cluster(
     policy=None,
     actor_name: str | None = None,
 ) -> IncidentCase:
-    """Promote a cluster. ``trigger`` is 'threshold' (automatic) or 'manual'
-    (operator judged a single report credible). Automatic cases land in
-    awaiting_dispatch; manual ones start in verifying."""
+    """Promote a cluster to a case awaiting review. ``trigger`` is 'threshold'
+    (N distinct reporters agreed) or 'manual' (人工成案 — an officer judged a
+    report below the threshold credible). Either way the case waits for the
+    審核點; nothing enters the queue unreviewed."""
     reports = list(
         db.scalars(
             select(Report).where(Report.cluster_id == cluster.id, Report.status != "rejected")
             .order_by(Report.created_at.asc())
         ).all()
     )
-    first_at = reports[0].created_at if reports else _now()
     last_at = reports[-1].created_at if reports else _now()
     town = cluster.town or next((r.town for r in reports if r.town), None)
     title = f"{town or ''}{category_label(cluster.category)}"
-    initial = CaseStatus.awaiting_dispatch if trigger == "threshold" else CaseStatus.verifying
 
     case = IncidentCase(
         platform_id=platform.id,
@@ -154,7 +173,7 @@ def create_case_from_cluster(
         title=title,
         category=cluster.category,
         severity=cluster.severity,
-        status=initial.value,
+        status=CaseStatus.pending_review.value,
         lat=cluster.centroid_lat,
         lon=cluster.centroid_lon,
         town=town,
@@ -163,8 +182,9 @@ def create_case_from_cluster(
         unique_reporter_count=cluster.unique_reporter_count,
         threshold_reached_at=last_at if trigger == "threshold" else None,
     )
-    case.created_at = last_at
-    _insert_case(db, platform, case, last_at)
+    created_at = last_at if trigger == "threshold" else _now()
+    case.created_at = created_at
+    _insert_case(db, platform, case, created_at)
 
     cluster.case_id = case.id
     cluster.status = "promoted"
@@ -175,34 +195,29 @@ def create_case_from_cluster(
         _event(
             db, case, event_type="report.received", actor_role="citizen",
             note=f"第 {idx} 筆民眾回報", at=r.created_at,
-            payload={"report_id": str(r.id), "reporter_role": r.reporter_role,
-                     "category": r.category},
+            payload={"report_id": str(r.id), "reporter_role": r.reporter_role, "category": r.category},
         )
     if trigger == "threshold":
         required = getattr(policy, "required_unique_reporters", None)
         _event(
-            db, case, event_type="threshold_reached", to_status=CaseStatus.threshold_reached.value,
-            note=f"達到案件成立門檻（{cluster.unique_reporter_count} 位不同回報者"
-                 + (f"，門檻 {required} 人）" if required else "）"),
-            # strictly after the last report event that triggered it
+            db, case, event_type="threshold_reached",
+            note=f"同地點 {cluster.unique_reporter_count} 位不同民眾回報"
+                 + (f"（門檻 {required} 人）" if required else ""),
             at=last_at + timedelta(milliseconds=1),
             payload={"unique_reporters": cluster.unique_reporter_count},
         )
         _event(
-            db, case, event_type="case.created", from_status=CaseStatus.threshold_reached.value,
-            to_status=CaseStatus.awaiting_dispatch.value, note="正式案件成立，等待派工",
-            # strictly after the threshold event so the timeline order is deterministic
-            at=last_at + timedelta(milliseconds=2),
-            payload={"trigger": trigger, "case_number": case.case_number},
+            db, case, event_type="case.created", to_status=CaseStatus.pending_review.value,
+            note="成案，等待承辦人員審核處理方式", at=last_at + timedelta(milliseconds=2),
+            payload={"trigger": trigger},
         )
     else:
         _event(
-            db, case, event_type="case.created", to_status=initial.value, actor_role="operator",
-            actor_name=actor_name, note="承辦人員建立案件，查證中", at=_now(),
-            payload={"trigger": trigger, "case_number": case.case_number},
+            db, case, event_type="case.created", to_status=CaseStatus.pending_review.value,
+            actor_role="operator", actor_name=actor_name, note="承辦人員人工成案，等待審核", at=created_at,
+            payload={"trigger": trigger},
         )
     db.flush()
-    notification_service.notify_case(db, platform, case, "created")
     return case
 
 
@@ -227,11 +242,21 @@ def attach_report_to_case(db: Session, case: IncidentCase, report: Report, clust
     _event(
         db, case, event_type="report.received", actor_role="citizen",
         note=f"第 {case.report_count} 筆民眾回報", at=report.created_at,
-        payload={"report_id": str(report.id), "reporter_role": report.reporter_role,
-                 "category": report.category},
+        payload={"report_id": str(report.id), "reporter_role": report.reporter_role, "category": report.category},
     )
 
 
+def promote_cluster(
+    db: Session, platform: Platform, cluster: ReportCluster, *, actor_name: str | None
+) -> IncidentCase:
+    if cluster.case_id is not None:
+        case = db.get(IncidentCase, cluster.case_id)
+        if case is not None:
+            return case
+    return create_case_from_cluster(db, platform, cluster, trigger="manual", actor_name=actor_name)
+
+
+# ── state changes ─────────────────────────────────────────────────────────
 def transition(
     db: Session,
     case: IncidentCase,
@@ -242,78 +267,195 @@ def transition(
     note: str | None = None,
     public: bool = True,
     at: datetime | None = None,
+    payload: dict | None = None,
 ) -> CaseEvent:
     """Validated status change. Raises InvalidTransitionError."""
     assert_transition(case.status, to_status)
     frm = case.status
     case.status = to_status
     stamp = at or _now()
-    if to_status == CaseStatus.assigned.value and case.dispatched_at is None:
-        case.dispatched_at = stamp
-    if to_status == CaseStatus.resolved.value:
-        case.resolved_at = stamp
+    track = track_of(to_status)
+    if track:
+        case.track = track
+    if frm == CaseStatus.pending_review.value:
+        case.reviewed_at = stamp
+        case.reviewed_by = actor_name
+    if to_status == CaseStatus.reported_emic.value and case.emic_reported_at is None:
+        case.emic_reported_at = stamp
+    if to_status == CaseStatus.community_submitted.value:
+        case.community_submitted_at = stamp
     if to_status == CaseStatus.closed.value:
         case.closed_at = stamp
+        case.resolved_at = case.resolved_at or stamp
     if to_status in (CaseStatus.closed.value, CaseStatus.dismissed.value) and case.cluster_id:
         cluster = db.get(ReportCluster, case.cluster_id)
         if cluster is not None:
             cluster.status = "closed" if to_status == CaseStatus.closed.value else "dismissed"
-    if to_status == CaseStatus.awaiting_dispatch.value and frm in (
-        CaseStatus.assigned.value, CaseStatus.en_route.value
-    ):
-        # dispatch cancelled — close the active assignment
-        for a in db.scalars(
-            select(CaseAssignment).where(CaseAssignment.case_id == case.id, CaseAssignment.status == "active")
-        ).all():
-            a.status = "cancelled"
-        case.assigned_unit = None
-    if to_status in DONE_STATUSES and to_status == CaseStatus.resolved.value:
-        for a in db.scalars(
-            select(CaseAssignment).where(CaseAssignment.case_id == case.id, CaseAssignment.status == "active")
-        ).all():
-            a.status = "completed"
-    ev = _event(
+    return _event(
         db, case, event_type="status_changed", actor_role=actor_role, actor_name=actor_name,
         note=note or public_label(to_status), public=public, from_status=frm, to_status=to_status,
-        at=at,
+        at=at, payload=payload,
     )
-    notification_service.notify_case(db, db.get(Platform, case.platform_id), case, to_status)
-    return ev
 
 
-def assign(
+def review(
+    db: Session,
+    platform: Platform,
+    case: IncidentCase,
+    decision: str,
+    *,
+    actor_name: str | None,
+    note: str | None = None,
+    at: datetime | None = None,
+) -> dict:
+    """審核點: decide how a pending case is handled.
+
+    emic       → 上報 EMIC（see ``report_to_emic``）
+    community  → 開放民眾協助處理
+    dismiss    → 不成案
+    """
+    if case.status != CaseStatus.pending_review.value:
+        raise CaseActionError("此案件已審核過")
+    if decision == "emic":
+        return report_to_emic(db, platform, case, actor_name=actor_name, note=note, at=at)
+    if decision == "community":
+        transition(db, case, CaseStatus.community_open.value, actor_name=actor_name, at=at,
+                   note=note or "經審核為小型災情，開放民眾協助處理；處理完成請上傳照片回報")
+        return {"decision": decision}
+    if decision == "dismiss":
+        transition(db, case, CaseStatus.dismissed.value, actor_name=actor_name, at=at,
+                   note=note or "經審核判定不成案（誤報或重複）")
+        return {"decision": decision}
+    raise CaseActionError("未知的審核決定")
+
+
+def report_to_emic(
+    db: Session,
+    platform: Platform,
+    case: IncidentCase,
+    *,
+    actor_name: str | None,
+    note: str | None = None,
+    at: datetime | None = None,
+) -> dict:
+    """Move the case to 已上報 EMIC. With EMIC_SUBMIT_URL configured the case
+    is sent; otherwise (or when sending fails) the officer files it in EMIC by
+    hand and records the EMIC case number — the result says which."""
+    transition(db, case, CaseStatus.reported_emic.value, actor_name=actor_name, at=at,
+               note=note or "經審核需上報，已列入 EMIC 上報")
+    result = {"decision": "emic", "mode": emic.mode(), "submitted": False, "detail": None}
+    case.emic_channel = "manual"
+    if emic.mode() == "api":
+        reports = reports_of(db, case.id)
+        from app.services import media_service
+
+        base = settings.API_PUBLIC_BASE_URL.rstrip("/")
+        photos = [f"{base}{media_service.public_url(p)}" for p in media_service.photos_for_case(db, case.id, public_only=True)]
+        try:
+            got = emic.submit(emic.build_payload(platform, case, reports, photos))
+            case.emic_channel = "api"
+            case.emic_case_no = got.get("case_no") or case.emic_case_no
+            case.emic_status = got.get("status") or case.emic_status
+            case.emic_synced_at = _now()
+            result.update(submitted=True, detail="已送出至 EMIC 介接端點")
+            _event(db, case, event_type="emic_submitted", actor_role="system", public=False,
+                   note="已透過介接端點上報 EMIC" + (f"（EMIC 案號 {case.emic_case_no}）" if case.emic_case_no else ""),
+                   payload={"emic_case_no": case.emic_case_no})
+        except ConnectorError as exc:
+            result.update(detail=f"自動上報失敗，請改以人工登錄：{exc.reason}")
+            _event(db, case, event_type="emic_submit_failed", actor_role="system", public=False,
+                   note=f"EMIC 自動上報失敗：{exc.reason}")
+    else:
+        result["detail"] = "EMIC 介接規格尚未提供：請於 EMIC 建立案件後，回填 EMIC 案號與處理狀態。"
+    return result
+
+
+def update_emic(
     db: Session,
     case: IncidentCase,
     *,
-    unit_name: str,
-    team_lead: str | None = None,
-    contact: str | None = None,
+    actor_name: str | None,
+    emic_case_no: str | None = None,
+    emic_status: str | None = None,
+    assigned_unit: str | None = None,
     note: str | None = None,
-    actor_name: str | None = None,
+    to_status: str | None = None,
     at: datetime | None = None,
-) -> CaseAssignment:
-    """縣府確認並派工: records the assignment and moves the case to assigned
-    (from awaiting_dispatch / verifying / threshold_reached / reported)."""
-    if case.status in (CaseStatus.reported.value, CaseStatus.verifying.value,
-                       CaseStatus.threshold_reached.value):
-        transition(db, case, CaseStatus.awaiting_dispatch.value, actor_role="operator",
-                   actor_name=actor_name, note="縣府確認成案", at=at)
-    assignment = CaseAssignment(
-        case_id=case.id, platform_id=case.platform_id, unit_name=unit_name,
-        team_lead=team_lead, contact=contact, note=note, status="active",
+) -> CaseEvent | None:
+    """Record what EMIC says about the case (manual entry or a sync), and
+    optionally move it to 處理中 / 已結案."""
+    if case.status not in {s.value for s in EMIC_STATUSES}:
+        raise CaseActionError("只有已上報 EMIC 的案件可以更新 EMIC 資訊")
+    changes: dict = {}
+    if emic_case_no is not None and emic_case_no.strip() != (case.emic_case_no or ""):
+        case.emic_case_no = emic_case_no.strip() or None
+        changes["emic_case_no"] = case.emic_case_no
+    if emic_status is not None and emic_status.strip() != (case.emic_status or ""):
+        case.emic_status = emic_status.strip() or None
+        changes["emic_status"] = case.emic_status
+    if assigned_unit is not None and assigned_unit.strip() != (case.assigned_unit or ""):
+        case.assigned_unit = assigned_unit.strip() or None
+        changes["assigned_unit"] = case.assigned_unit
+    ev = None
+    if changes:
+        case.emic_synced_at = at or _now()
+        parts = []
+        if "emic_status" in changes and case.emic_status:
+            parts.append(f"EMIC 處理狀態：{case.emic_status}")
+        if "assigned_unit" in changes and case.assigned_unit:
+            parts.append(f"處理單位：{case.assigned_unit}")
+        # the EMIC case number itself is internal
+        public_parts = parts[:]
+        if "emic_case_no" in changes and case.emic_case_no:
+            parts.append(f"EMIC 案號 {case.emic_case_no}")
+        ev = _event(
+            db, case, event_type="emic_updated", actor_name=actor_name,
+            note="；".join(public_parts) or "已登錄 EMIC 案號", public=bool(public_parts), at=at,
+            payload={"changes": changes, "internal_note": "；".join(parts)},
+        )
+    if note:
+        add_update(db, case, note=note, public=True, actor_name=actor_name, at=at)
+    if to_status:
+        ev = transition(db, case, to_status, actor_name=actor_name, at=at)
+    return ev
+
+
+def community_submit(
+    db: Session,
+    case: IncidentCase,
+    *,
+    note: str | None,
+    helper_name: str | None = None,
+    photo_count: int = 0,
+    at: datetime | None = None,
+) -> CaseEvent:
+    """A citizen reports a 民間可處理 case as handled (photos already saved)."""
+    if case.status != CaseStatus.community_open.value:
+        raise CaseActionError("此案件目前不開放民眾回報處理")
+    clean = privacy_service.redact_text((note or "").strip()) or None
+    return transition(
+        db, case, CaseStatus.community_submitted.value, actor_role="citizen", actor_name=None, at=at,
+        note="民眾回報已處理完成，等待承辦人員確認" + (f"：{clean}" if clean else ""),
+        payload={"photo_count": photo_count, "helper_named": bool(helper_name)},
     )
-    if at is not None:
-        assignment.created_at = at
-    db.add(assignment)
-    case.assigned_unit = unit_name
-    db.flush()
-    if case.status == CaseStatus.awaiting_dispatch.value:
-        transition(db, case, CaseStatus.assigned.value, actor_role="operator", actor_name=actor_name,
-                   note=f"已派遣{unit_name}前往處理", at=at)
-    else:
-        _event(db, case, event_type="assignment_changed", actor_role="operator", actor_name=actor_name,
-               note=f"改派{unit_name}", payload={"unit_name": unit_name}, at=at)
-    return assignment
+
+
+def community_confirm(
+    db: Session,
+    case: IncidentCase,
+    *,
+    approve: bool,
+    actor_name: str | None,
+    note: str | None = None,
+    at: datetime | None = None,
+) -> CaseEvent:
+    if case.status != CaseStatus.community_submitted.value:
+        raise CaseActionError("此案件沒有待確認的民眾處理回報")
+    if approve:
+        return transition(db, case, CaseStatus.closed.value, actor_name=actor_name, at=at,
+                          note=note or "承辦人員確認處理完成，結案並自地圖撤除")
+    return transition(db, case, CaseStatus.community_open.value, actor_name=actor_name, at=at,
+                      note="處理照片未通過確認，重新開放民眾協助" + (f"：{note}" if note else ""))
 
 
 def add_update(
@@ -334,6 +476,21 @@ def add_update(
     )
 
 
+def after_commit(db: Session, platform: Platform, case: IncidentCase, *, previous_status: str | None) -> None:
+    """Tell the right people about a committed change (never raises)."""
+    if case.status == previous_status:
+        return
+    try:
+        if case.status == CaseStatus.pending_review.value:
+            notification_service.staff_review_needed(platform, case)
+        elif case.status == CaseStatus.community_submitted.value:
+            notification_service.staff_community_submitted(platform, case)
+        notification_service.notify_reporters(db, platform, case)
+    except Exception:  # noqa: BLE001 — a notification must never fail the request
+        pass
+
+
+# ── queries ───────────────────────────────────────────────────────────────
 def get_case(db: Session, case_id: uuid.UUID) -> IncidentCase | None:
     return db.get(IncidentCase, case_id)
 
@@ -345,8 +502,12 @@ def require_case(db: Session, case_id: uuid.UUID) -> IncidentCase:
     return case
 
 
-_SORTS = {
-    "severity": lambda desc: (desc, "severity"),
+_PHASES: dict[str, frozenset[CaseStatus]] = {
+    "pending": PENDING_STATUSES,
+    "active": EMIC_STATUSES,
+    "community": COMMUNITY_STATUSES,
+    "queued": QUEUED_STATUSES,
+    "done": DONE_STATUSES,
 }
 
 
@@ -356,6 +517,7 @@ def list_cases(
     *,
     statuses: list[str] | None = None,
     phase: str | None = None,
+    track: str | None = None,
     category: str | None = None,
     town: str | None = None,
     severity: str | None = None,
@@ -368,14 +530,12 @@ def list_cases(
     filters = [IncidentCase.platform_id == platform_id]
     if statuses:
         filters.append(IncidentCase.status.in_(statuses))
-    if phase == "pending":
-        filters.append(IncidentCase.status.in_([s.value for s in PENDING_STATUSES]))
-    elif phase == "active":
-        filters.append(IncidentCase.status.in_([s.value for s in ACTIVE_STATUSES]))
-    elif phase == "done":
-        filters.append(IncidentCase.status.in_([s.value for s in DONE_STATUSES]))
+    if phase in _PHASES:
+        filters.append(IncidentCase.status.in_([s.value for s in _PHASES[phase]]))
     elif phase == "open":
         filters.append(IncidentCase.status.not_in([CaseStatus.closed.value, CaseStatus.dismissed.value]))
+    if track:
+        filters.append(IncidentCase.track == track)
     if public_only:
         filters.append(IncidentCase.status != CaseStatus.dismissed.value)
     if category:
@@ -389,6 +549,10 @@ def list_cases(
 
     total = db.scalar(select(func.count()).select_from(IncidentCase).where(*filters)) or 0
     q = select(IncidentCase).where(*filters)
+    if sort == "severity_desc":
+        rows = list(db.scalars(q).all())
+        rows.sort(key=lambda c: (-severity_rank(c.severity), -(c.created_at.timestamp() if c.created_at else 0)))
+        return rows[offset:offset + limit], int(total)
     if sort == "reports_desc":
         q = q.order_by(IncidentCase.unique_reporter_count.desc(), IncidentCase.created_at.desc())
     elif sort == "created_asc":
@@ -398,8 +562,6 @@ def list_cases(
     else:
         q = q.order_by(IncidentCase.created_at.desc())
     rows = list(db.scalars(q.limit(limit).offset(offset)).all())
-    if sort == "severity_desc":
-        rows.sort(key=lambda c: (-severity_rank(c.severity), c.created_at), reverse=False)
     return rows, int(total)
 
 
@@ -408,15 +570,6 @@ def timeline(db: Session, case_id: uuid.UUID, *, public_only: bool) -> list[Case
     if public_only:
         q = q.where(CaseEvent.public.is_(True))
     return list(db.scalars(q.order_by(CaseEvent.created_at.asc(), CaseEvent.id.asc())).all())
-
-
-def assignments(db: Session, case_id: uuid.UUID) -> list[CaseAssignment]:
-    return list(
-        db.scalars(
-            select(CaseAssignment).where(CaseAssignment.case_id == case_id)
-            .order_by(CaseAssignment.created_at.desc())
-        ).all()
-    )
 
 
 def reports_of(db: Session, case_id: uuid.UUID) -> list[Report]:
@@ -446,13 +599,3 @@ def nearby_cases(
             out.append((c, d))
     out.sort(key=lambda t: t[1])
     return out[:limit]
-
-
-def promote_cluster(
-    db: Session, platform: Platform, cluster: ReportCluster, *, actor_name: str | None
-) -> IncidentCase:
-    if cluster.case_id is not None:
-        case = db.get(IncidentCase, cluster.case_id)
-        if case is not None:
-            return case
-    return create_case_from_cluster(db, platform, cluster, trigger="manual", actor_name=actor_name)

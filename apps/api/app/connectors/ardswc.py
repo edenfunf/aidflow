@@ -147,12 +147,7 @@ def _shapes(kind: str) -> list[dict]:
         return rows
 
 
-def clear_shape_cache() -> None:
-    with _shape_lock:
-        _shape_cache.clear()
 
-
-# ── normalisers (pure) ───────────────────────────────────────────────────
 def _sev(risk: str | None, alert: str | None) -> str:
     if alert == "red":
         return "critical"

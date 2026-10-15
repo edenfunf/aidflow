@@ -56,16 +56,16 @@ export default function PortalCasesPage() {
     <PortalShell platform={platform} slug={slug}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <div className="af-eyebrow">災情案件</div>
-          <h1 className="af-h1">全部案件</h1>
+          <div className="af-eyebrow">處理進度</div>
+          <h1 className="af-h1">全部災情案件</h1>
         </div>
-        <div className="text-xs text-[var(--muted)]">共 {total} 件</div>
+        <div className="text-sm text-[var(--muted)]">共 {total} 件</div>
       </div>
-      <div className="af-panel mb-3 flex flex-wrap items-center gap-2 p-2">
-        <div className="flex gap-1">
-          {(["all", "pending", "active", "done"] as const).map((p) => (
-            <button key={p} type="button" onClick={() => setPhase(p)} className={`af-chip ${phase === p ? "af-chip-on" : ""}`}>
-              {p === "all" ? "全部" : PHASE_LABEL[p]}
+      <div className="af-panel mb-3 flex flex-wrap items-center gap-2 p-2.5">
+        <div className="flex flex-wrap gap-1.5">
+          {(["all", "pending", "active", "community", "done"] as const).map((p) => (
+            <button key={p} type="button" onClick={() => setPhase(p)} className={`af-chip !px-3 !py-1.5 !text-[15px] ${phase === p ? "af-chip-on" : ""}`}>
+              {p === "all" ? "全部" : p === "active" ? "處理中" : PHASE_LABEL[p]}
             </button>
           ))}
         </div>
@@ -117,7 +117,7 @@ export default function PortalCasesPage() {
                     <th>嚴重度</th>
                     <th>回報</th>
                     <th>狀態</th>
-                    <th>處理單位</th>
+                    <th>處理方式</th>
                     <th>最近更新</th>
                   </tr>
                 </thead>
@@ -133,7 +133,7 @@ export default function PortalCasesPage() {
                               <Link href={`/p/${slug}/cases/${c.id}`} className="font-medium text-[var(--ink)] hover:underline" onClick={(e) => e.stopPropagation()}>
                                 {c.title}
                               </Link>
-                              <div className="whitespace-nowrap text-[11px] text-[var(--muted)]">
+                              <div className="whitespace-nowrap text-[13px] text-[var(--muted)]">
                                 <span className="font-mono">{c.case_number}</span> · {c.category_label}
                               </div>
                             </div>
@@ -147,7 +147,15 @@ export default function PortalCasesPage() {
                         <td>
                           <StatusPill status={c.status} phase={c.phase} />
                         </td>
-                        <td className="text-xs text-[var(--ink-2)]">{c.assigned_unit || "—"}</td>
+                        <td className="text-xs text-[var(--ink-2)]">
+                          {c.track_label || "—"}
+                          {c.emic_status ? <div className="text-[13px] text-[var(--muted)]">EMIC：{c.emic_status}</div> : null}
+                          {c.status === "community_open" ? (
+                            <Link href={`/p/${slug}/cases/${c.id}#assist`} className="block text-[13px] font-medium text-[var(--st-community)] hover:underline" onClick={(e) => e.stopPropagation()}>
+                              我來協助處理 →
+                            </Link>
+                          ) : null}
+                        </td>
                         <td className="whitespace-nowrap text-xs text-[var(--muted)]" title={fmtTime(c.updated_at)}>
                           {fmtAgo(c.updated_at)}
                         </td>
@@ -168,7 +176,7 @@ export default function PortalCasesPage() {
                 <Skeleton className="h-full w-full" />
               )}
             </div>
-            <div className="px-3 py-2 text-[11px] text-[var(--muted)]">點選列表中的案件，地圖會飛到該地點；公開位置已粗化。</div>
+            <div className="px-3 py-2 text-[13px] text-[var(--muted)]">點選列表中的案件，地圖會飛到該地點；公開位置已粗化。</div>
           </div>
         </aside>
       </div>

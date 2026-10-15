@@ -10,7 +10,9 @@ from app.domain.case_states import (
     can_transition,
     next_statuses,
     phase_of,
+    track_of,
 )
+from app.domain.permissions import Perm, has_perm
 from app.domain.categories import CATEGORIES, are_similar, escalate, max_severity
 from app.domain.hazards import detect_hazards
 from app.modules import registry
@@ -18,20 +20,24 @@ from app.modules.scenarios import compose_profile
 
 
 # ── state machine ─────────────────────────────────────────────────────────
-def test_happy_path_transitions_are_allowed():
-    path = ["awaiting_dispatch", "assigned", "en_route", "on_site", "processing", "resolved", "closed"]
-    for frm, to in zip(path, path[1:]):
-        assert can_transition(frm, to), f"{frm} -> {to}"
+def test_both_tracks_are_allowed_paths():
+    for path in (["pending_review", "reported_emic", "emic_processing", "closed"],
+                 ["pending_review", "community_open", "community_submitted", "closed"],
+                 ["pending_review", "dismissed"]):
+        for frm, to in zip(path, path[1:]):
+            assert can_transition(frm, to), f"{frm} -> {to}"
 
 
 @pytest.mark.parametrize("frm,to", [
-    ("awaiting_dispatch", "resolved"),  # cannot skip dispatch
-    ("closed", "processing"),  # terminal
-    ("dismissed", "awaiting_dispatch"),  # terminal
-    ("assigned", "resolved"),  # must reach site first
-    ("resolved", "assigned"),
-    ("bogus", "assigned"),
-    ("assigned", "bogus"),
+    ("pending_review", "closed"),  # nothing closes without a review decision
+    ("pending_review", "emic_processing"),  # must be reported first
+    ("pending_review", "community_submitted"),
+    ("closed", "reported_emic"),  # terminal
+    ("dismissed", "pending_review"),  # terminal
+    ("emic_processing", "community_open"),  # an EMIC case never goes back to citizens
+    ("community_submitted", "dismissed"),
+    ("bogus", "closed"),
+    ("pending_review", "bogus"),
 ])
 def test_illegal_transitions_are_rejected(frm, to):
     assert not can_transition(frm, to)
@@ -39,16 +45,31 @@ def test_illegal_transitions_are_rejected(frm, to):
         assert_transition(frm, to)
 
 
-def test_reopen_and_cancel_dispatch_paths():
-    assert can_transition("resolved", "processing")  # reopen
-    assert can_transition("assigned", "awaiting_dispatch")  # cancel dispatch
-    assert "closed" not in next_statuses("processing")
-    assert next_statuses("closed") == []
+def test_community_reject_and_escalation_paths():
+    assert can_transition("community_submitted", "community_open")  # 退回
+    assert can_transition("community_open", "reported_emic")  # 改列上報
+    assert can_transition("community_submitted", "reported_emic")
+    assert next_statuses("pending_review") == ["reported_emic", "community_open", "dismissed"]
+    assert next_statuses("closed") == [] and next_statuses("dismissed") == []
 
 
-def test_phase_mapping_covers_every_status():
+def test_phase_and_track_mapping_covers_every_status():
     for s in CaseStatus:
-        assert phase_of(s) in {"pending", "active", "done", "dismissed"}
+        assert phase_of(s) in {"pending", "active", "community", "done", "dismissed"}
+    assert track_of("reported_emic") == "emic" and track_of("community_submitted") == "community"
+    assert track_of("pending_review") is None
+
+
+# ── roles ─────────────────────────────────────────────────────────────────
+def test_permission_matrix_matches_the_design_document():
+    assert has_perm("officer", Perm.review_cases) and has_perm("officer", Perm.view_pii)
+    assert not has_perm("officer", Perm.manage_platforms) and not has_perm("officer", Perm.view_audit)
+    assert has_perm("supervisor", Perm.view_pii) and has_perm("supervisor", Perm.view_audit)
+    assert not has_perm("supervisor", Perm.review_cases)
+    assert has_perm("admin", Perm.manage_users) and has_perm("admin", Perm.manage_line)
+    assert not has_perm("admin", Perm.view_pii) and not has_perm("admin", Perm.review_cases)
+    assert all(has_perm(r, Perm.view_console) for r in ("officer", "supervisor", "admin"))
+    assert not has_perm(None, Perm.view_console) and not has_perm("citizen", Perm.view_console)
 
 
 # ── categories / triage ───────────────────────────────────────────────────
@@ -82,15 +103,16 @@ def test_registry_has_required_aidflow_modules():
     required = {
         "report_form", "geo_location", "photo_upload", "report_category", "reporter_role",
         "duplicate_report_merge", "geo_cluster", "two_report_trigger", "incident_case_creation",
-        "severity_triage", "case_dispatch", "case_assignment", "case_status",
+        "severity_triage", "case_review", "case_status", "emic_report", "community_handling",
         "incident_map", "report_cluster_layer", "heatmap_layer", "official_alert_layer",
         "rainfall_layer", "water_layer", "shelter_layer",
         "public_timeline", "status_progress", "incident_statistics", "trend_visualization",
-        "privacy_mask", "personal_data_redaction", "line_notify",
+        "privacy_mask", "personal_data_redaction", "line_group_notify", "progress_subscription", "map_embed",
     }
     ids = {m.id for m in registry.all()}
     missing = required - ids
     assert not missing, missing
+    assert not {"case_dispatch", "case_assignment", "line_notify"} & ids  # retired
     for layer in registry.layers():
         assert layer.layer_key
 

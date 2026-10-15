@@ -43,7 +43,7 @@ export default function ProgressRing({ value, total, size = 132, color = "var(--
             {Math.min(value, total)}
             <span className="text-sm text-[var(--muted)]"> / {total}</span>
           </div>
-          {label ? <div className="mt-1 text-[10.5px] text-[var(--muted)]">{label}</div> : null}
+          {label ? <div className="mt-1 text-[12.5px] text-[var(--muted)]">{label}</div> : null}
         </div>
       </div>
     </div>

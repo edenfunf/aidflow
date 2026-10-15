@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aidflow.example/schemas/platform-create.schema.json",
   "title": "PlatformCreate",
-  "description": "The human-approved plan sent to POST /v1/agent/execute (or /v1/platforms). Core modules and dependencies are always added by the composer.",
+  "description": "A named disaster sent to POST /v1/platforms (系統管理者). Categories, layers and modules left out are derived from the hazard types; core modules and dependencies are always added by the composer.",
   "type": "object",
   "required": ["name", "hazards"],
   "properties": {

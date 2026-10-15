@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import io
+
+import pytest
+from PIL import Image
+
+from app.services import media_service
 from app.services.privacy_service import mask_address, public_coords, redact_text, reporter_key
+from app.utils.ratelimit import SlidingWindowLimiter
 
 
 def test_mask_address_strips_house_numbers_and_lanes():
@@ -34,3 +41,33 @@ def test_reporter_key_is_stable_and_prefers_contact():
     assert reporter_key(None, None) is None
     assert reporter_key("  ", "") is None
     assert len(a) == 32 and "0912" not in a
+
+
+def test_photo_exif_gps_is_stripped():
+    img = Image.new("RGB", (40, 30), (200, 30, 30))
+    exif = Image.Exif()
+    exif[0x010F] = "PhoneMaker"  # Make
+    exif[0x8825] = {1: "N", 2: (24.0, 1.0, 25.0), 3: "E", 4: (121.0, 9.0, 26.0)}  # GPSInfo
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif)
+    raw = buf.getvalue()
+    assert b"PhoneMaker" in raw
+    clean, ctype = media_service.prepare(raw, "image/jpeg")
+    assert ctype == "image/jpeg" and b"PhoneMaker" not in clean
+    with Image.open(io.BytesIO(clean)) as out:
+        assert not out.getexif() and out.size == (40, 30)
+
+
+def test_photo_rejects_heic_and_non_images():
+    with pytest.raises(media_service.UnsupportedMediaError):
+        media_service.prepare(b"\x00\x00\x00\x18ftypheic" + b"0" * 32, "image/heic")
+    with pytest.raises(media_service.UnsupportedMediaError):
+        media_service.prepare(b"GIF89a....", "image/gif")
+
+
+def test_sliding_window_rate_limiter():
+    lim = SlidingWindowLimiter(3, window_seconds=60)
+    assert all(lim.allow("1.2.3.4", now=t) for t in (0, 1, 2))
+    assert not lim.allow("1.2.3.4", now=3)
+    assert lim.allow("5.6.7.8", now=3)  # per client
+    assert lim.allow("1.2.3.4", now=61)  # window slides

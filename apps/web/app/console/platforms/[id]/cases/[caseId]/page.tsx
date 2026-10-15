@@ -1,7 +1,10 @@
 "use client";
 
-// Case workbench: dispatch, progress the state machine, post public updates,
-// review every report (with PII, internal only), photos, nearby cases.
+// Case workbench. The main panel changes with the case's stage:
+//   待審核            → the 審核點: 上報 EMIC／民間可處理／不成案
+//   已上報 EMIC／處理中 → record the EMIC case number, status and unit; close
+//   民眾協助           → watch, escalate, or confirm the citizen's photos
+// Actions are offered only to roles that may take them (the API enforces it).
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -10,70 +13,82 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConsoleShell from "@/components/ConsoleShell";
 import CaseTimeline, { ProgressSteps } from "@/components/CaseTimeline";
 import PhotoStrip from "@/components/PhotoStrip";
-import ResponderPanel from "@/components/console/ResponderPanel";
 import { ErrorBox, SeverityTag, Skeleton, StatusPill } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useMe } from "@/lib/auth";
 import { fmtMeters, fmtTime } from "@/lib/format";
-import { CATEGORY_LABEL, CATEGORY_LAYER, EVENT_LABEL, ROLE_LABEL, STATUS_LABEL } from "@/lib/labels";
-import type { CaseDetail, CaseStatus, MapFeature, PublicTimelineItem, RouteFeature, VehicleItem } from "@/lib/types";
+import { CATEGORY_LABEL, CATEGORY_LAYER, CONSOLE_STATUS_LABEL, ROLE_LABEL, SEVERITY_HEX } from "@/lib/labels";
+import type { CaseDetail, MapFeature, ProgressStep, PublicTimelineItem, ReviewDecision } from "@/lib/types";
 
 const TerrainMap = dynamic(() => import("@/components/TerrainMap"), { ssr: false, loading: () => <Skeleton className="h-full w-full" /> });
 
-const ACTION_LABEL: Partial<Record<CaseStatus, string>> = {
-  awaiting_dispatch: "退回待派工",
-  en_route: "人員出發",
-  on_site: "人員抵達",
-  processing: "開始處理",
-  resolved: "處理完成",
-  closed: "結案",
-  dismissed: "判定不成案",
-  verifying: "開始查證",
-  threshold_reached: "確認成案",
-};
+const DECISIONS: { key: ReviewDecision; title: string; detail: string; color: string }[] = [
+  { key: "emic", title: "上報 EMIC", detail: "需權責單位處理的災情：列入 EMIC 上報，後續依 EMIC 狀態追蹤。", color: "#1d4ed8" },
+  { key: "community", title: "民間可處理", detail: "小型災情（如倒木、排水孔堵塞）：開放民眾協助，民眾上傳處理後照片再由您確認。", color: "#0e7490" },
+  { key: "dismiss", title: "不成案", detail: "誤報、重複或不需處理：不公開於地圖，保留紀錄。", color: "#667085" },
+];
 
-const UNIT_PRESETS = ["縣政府工務處道路養護科", "鄉公所民政課", "鄉公所農業課", "縣消防局大隊", "公路局工務段", "水利署河川分署", "農村發展及水土保持署分署", "台電區營業處"];
+function Panel({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
+  return (
+    <section className="af-panel overflow-hidden">
+      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)", borderTop: accent ? `4px solid ${accent}` : undefined }}>
+        <h2 className="text-[19px] font-semibold text-[var(--ink)]">{title}</h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
 
 export default function CaseWorkbenchPage() {
   const { id, caseId } = useParams<{ id: string; caseId: string }>();
+  const { can } = useMe();
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [unit, setUnit] = useState("");
-  const [lead, setLead] = useState("");
-  const [contact, setContact] = useState("");
-  const [assignNote, setAssignNote] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [emicNo, setEmicNo] = useState("");
+  const [emicStatus, setEmicStatus] = useState("");
+  const [emicUnit, setEmicUnit] = useState("");
+  const [emicNote, setEmicNote] = useState("");
+  const [confirmNote, setConfirmNote] = useState("");
   const [note, setNote] = useState("");
   const [notePublic, setNotePublic] = useState(true);
-  const [actor, setActor] = useState("值班承辦");
   const [photoKind, setPhotoKind] = useState<"before" | "scene" | "after">("after");
-  const [manualOpen, setManualOpen] = useState(false);
-  const [routes, setRoutes] = useState<RouteFeature[]>([]);
-  const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const hydrated = useRef(false);
 
   const load = useCallback(() => {
-    api.getCase(caseId).then(setDetail).catch((e) => setError((e as Error).message));
+    api
+      .getCase(caseId)
+      .then((d) => {
+        setDetail(d);
+        if (!hydrated.current) {
+          setEmicNo(d.case.emic_case_no || "");
+          setEmicStatus(d.case.emic_status || "");
+          setEmicUnit(d.case.assigned_unit || "");
+          hydrated.current = true;
+        }
+      })
+      .catch((e) => setError((e as Error).message));
   }, [caseId]);
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 15000);
+    const t = window.setInterval(() => {
+      if (!document.hidden) load();
+    }, 15000);
     return () => window.clearInterval(t);
   }, [load]);
-  useEffect(() => {
-    const loadLive = () => {
-      api.consoleRoutes(id).then((r) => setRoutes(r.features.filter((f) => f.properties.case_id === caseId))).catch(() => undefined);
-      api.consoleVehicles(id).then((r) => setVehicles(r.items.filter((v) => v.case_id === caseId))).catch(() => undefined);
-    };
-    loadLive();
-    const t = window.setInterval(loadLive, 3000);
-    return () => window.clearInterval(t);
-  }, [id, caseId]);
 
-  const run = async (key: string, fn: () => Promise<unknown>) => {
+  const run = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key);
     setError(null);
+    setNotice(null);
     try {
-      await fn();
+      const r = await fn();
+      const detailMsg = (r as { result?: { detail?: string | null } } | undefined)?.result?.detail;
+      setNotice(detailMsg || done || null);
+      hydrated.current = false;
       load();
     } catch (e) {
       setError((e as Error).message);
@@ -101,188 +116,287 @@ export default function CaseWorkbenchPage() {
       }));
     return [main, ...reps];
   }, [detail]);
+  const mapVisible = useMemo(() => ({ incident_cases: true, citizen_reports: true }), []);
 
   const timelineItems = useMemo<PublicTimelineItem[]>(
     () =>
       (detail?.events || []).map((e) => ({
         event_type: e.event_type,
-        label: (e.event_type === "status_changed" && e.to_status_label) || EVENT_LABEL[e.event_type] || e.event_type,
+        label: e.label,
         note: [e.note, e.actor_name ? `— ${e.actor_name}` : "", e.public ? "" : "（內部）"].filter(Boolean).join(" "),
-        to_status: (e.to_status as CaseStatus) || null,
+        to_status: (e.to_status as PublicTimelineItem["to_status"]) || null,
         at: e.created_at,
       })),
     [detail]
   );
 
-  const progress = useMemo(() => {
+  const progress = useMemo<ProgressStep[]>(() => {
     if (!detail) return [];
-    const order: CaseStatus[] = ["reported", "threshold_reached", "awaiting_dispatch", "assigned", "on_site", "processing", "resolved"];
+    const c = detail.case;
+    const path: ProgressStep["key"][] =
+      c.status === "dismissed" ? ["pending_review", "dismissed"] : c.track === "community" ? ["pending_review", "community_open", "community_submitted", "closed"] : c.track === "emic" ? ["pending_review", "reported_emic", "emic_processing", "closed"] : ["pending_review", "closed"];
     const reached: Record<string, string> = {};
-    for (const e of detail.events) {
-      if (e.to_status && !reached[e.to_status]) reached[e.to_status] = e.created_at;
-      if (e.event_type === "report.received" && !reached.reported) reached.reported = e.created_at;
-    }
-    const cur = order.indexOf(detail.case.status === "en_route" ? "assigned" : (detail.case.status as CaseStatus));
-    return order.map((k, i) => ({ key: k, label: STATUS_LABEL[k], reached: Boolean(reached[k]) || (cur >= 0 && i <= cur), current: cur === i, at: reached[k] || null }));
+    for (const e of detail.events) if (e.to_status && !reached[e.to_status]) reached[e.to_status] = e.created_at;
+    const cur = path.indexOf(c.status);
+    return path.map((k, i) => ({ key: k, label: CONSOLE_STATUS_LABEL[k], reached: Boolean(reached[k]) || (cur >= 0 && i <= cur), current: cur === i, at: reached[k] || null }));
   }, [detail]);
 
   if (!detail) {
     return (
-      <ConsoleShell crumbs={[{ href: "/console", label: "平台總覽" }, { href: `/console/platforms/${id}`, label: "指揮中心" }, { label: "案件" }]}>
+      <ConsoleShell crumbs={[{ href: "/console", label: "災害平台" }, { href: `/console/platforms/${id}`, label: "平台後台" }, { label: "案件" }]}>
         {error ? <ErrorBox message={error} onRetry={load} /> : <Skeleton className="h-80" />}
       </ConsoleShell>
     );
   }
   const c = detail.case;
-  const canAssign = !["closed", "dismissed"].includes(c.status);
+  const officer = can("review_cases");
+  const citizenPhotos = detail.photos.filter((p) => p.source === "citizen" && p.kind === "after");
+  const isEmic = c.status === "reported_emic" || c.status === "emic_processing";
 
   return (
-    <ConsoleShell wide crumbs={[{ href: "/console", label: "平台總覽" }, { href: `/console/platforms/${id}`, label: "指揮中心" }, { label: c.case_number }]}>
+    <ConsoleShell wide crumbs={[{ href: "/console", label: "災害平台" }, { href: `/console/platforms/${id}`, label: "平台後台" }, { label: c.case_number }]}>
       {error ? (
         <div className="mb-3">
           <ErrorBox message={error} />
         </div>
       ) : null}
-      <div className="af-panel mb-3 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      {notice ? <div className="mb-3 rounded-md border px-4 py-3 text-[16px]" style={{ borderColor: "#b2ddff", background: "#eff8ff", color: "#175cd3" }}>{notice}</div> : null}
+
+      <div className="af-panel relative mb-4 overflow-hidden p-5">
+        <span className="absolute inset-y-0 left-0 w-2" style={{ background: SEVERITY_HEX[c.severity] }} />
+        <div className="flex flex-wrap items-start justify-between gap-3 pl-2">
           <div>
-            <div className="font-mono text-[11px] text-[var(--muted)]">{c.case_number}</div>
-            <h1 className="text-xl font-semibold">{c.title}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--ink-2)]">
-              <StatusPill status={c.status} phase={c.phase} />
+            <div className="font-mono text-[14px] text-[var(--muted)]">{c.case_number}</div>
+            <h1 className="text-[28px] font-bold text-[var(--ink)]">{c.title}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-[15px] text-[var(--ink-2)]">
+              <StatusPill status={c.status} phase={c.phase} console />
               <SeverityTag severity={c.severity} />
+              {c.track_label ? <span className="af-chip">{c.track_label}</span> : null}
               <span>{c.unique_reporter_count} 人回報（{c.report_count} 筆）</span>
-              <span>{c.town} · {c.location_label}</span>
+              <span>
+                {c.town} · {c.location_label}
+              </span>
               <span className="font-mono text-[var(--muted)]">
                 {c.lat.toFixed(5)}, {c.lon.toFixed(5)}
               </span>
             </div>
           </div>
-          <div className="text-right text-[11px] text-[var(--muted)]">
+          <div className="text-right text-[14px] text-[var(--muted)]">
             <div>成案 {fmtTime(c.created_at)}</div>
-            {c.dispatched_at ? <div>派工 {fmtTime(c.dispatched_at)}</div> : null}
-            {c.resolved_at ? <div>完成 {fmtTime(c.resolved_at)}</div> : null}
-            {c.assigned_unit ? <div className="mt-1 font-medium text-[var(--ink-2)]">處理單位：{c.assigned_unit}</div> : null}
-            <Link href={`/p/${""}`} className="hidden" />
+            {c.reviewed_at ? <div>審核 {fmtTime(c.reviewed_at)}{c.reviewed_by ? `（${c.reviewed_by}）` : ""}</div> : null}
+            {c.closed_at ? <div>結案 {fmtTime(c.closed_at)}</div> : null}
           </div>
         </div>
-        <div className="mt-4">
+        <div className="mt-5 pl-2">
           <ProgressSteps steps={progress} />
         </div>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-12">
-        {/* actions */}
-        <div className="space-y-3 xl:col-span-4">
-          <ResponderPanel caseId={c.id} disabled={!canAssign} actorName={actor} onDispatched={() => load()} />
+      <div className="grid gap-4 xl:grid-cols-12">
+        <div className="space-y-4 xl:col-span-5">
+          {/* ── 審核點 ── */}
+          {c.status === "pending_review" ? (
+            <Panel title="審核：這件災情要怎麼處理？" accent="var(--st-pending)">
+              {officer ? (
+                <>
+                  <p className="text-[15px] text-[var(--ink-2)]">請先檢視右側的民眾回報與照片，再決定處理方式。決定後才會進入案件佇列，並通知訂閱進度的民眾。</p>
+                  <textarea className="af-input mt-3" placeholder="審核說明（選填，公開於處理時間軸）" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} maxLength={500} />
+                  <div className="mt-3 grid gap-2.5">
+                    {DECISIONS.map((d) => (
+                      <button
+                        key={d.key}
+                        type="button"
+                        disabled={Boolean(busy)}
+                        className="flex w-full items-start gap-3 rounded-md border-2 p-3.5 text-left transition hover:shadow-md disabled:opacity-60"
+                        style={{ borderColor: d.color }}
+                        onClick={() => {
+                          if (d.key === "dismiss" && !window.confirm("確定判定為不成案？")) return;
+                          run(`review-${d.key}`, () => api.reviewCase(c.id, { decision: d.key, note: reviewNote.trim() || undefined }), d.key === "community" ? "已開放民眾協助處理。" : d.key === "dismiss" ? "已判定不成案。" : undefined);
+                        }}
+                      >
+                        <span className="mt-0.5 h-5 w-5 flex-none rounded-full border-[3px]" style={{ borderColor: d.color }} />
+                        <span>
+                          <span className="block text-[19px] font-bold" style={{ color: d.color }}>
+                            {busy === `review-${d.key}` ? "處理中…" : d.title}
+                          </span>
+                          <span className="mt-0.5 block text-[14px] text-[var(--ink-2)]">{d.detail}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[15px] text-[var(--muted)]">此案件等待承辦審核人員決定處理方式。您的角色可檢視，無審核權限。</p>
+              )}
+            </Panel>
+          ) : null}
 
-          <section className="af-panel p-3">
-            <button type="button" className="flex w-full items-center justify-between text-left text-xs font-medium text-[var(--ink-2)]" onClick={() => setManualOpen((v) => !v)} aria-expanded={manualOpen}>
-              <span>手動指定處理單位（不在建議名單內）</span>
-              <span className="text-[var(--muted)]">{manualOpen ? "收合 ▾" : "展開 ▸"}</span>
-            </button>
-            {manualOpen ? (
-              <div className="mt-3">
-            {canAssign ? (
-              <div className="space-y-2">
-                <input className="af-input" list="unit-presets" placeholder="處理單位（例：仁愛鄉公所民政課）" value={unit} onChange={(e) => setUnit(e.target.value)} />
-                <datalist id="unit-presets">
-                  {UNIT_PRESETS.map((u) => (
-                    <option key={u} value={u} />
-                  ))}
-                </datalist>
-                <div className="grid grid-cols-2 gap-2">
-                  <input className="af-input" placeholder="帶隊人員（內部）" value={lead} onChange={(e) => setLead(e.target.value)} />
-                  <input className="af-input" placeholder="聯絡方式（內部）" value={contact} onChange={(e) => setContact(e.target.value)} />
+          {/* ── EMIC ── */}
+          {isEmic ? (
+            <Panel title="EMIC 上報與處理進度" accent="var(--st-active)">
+              <div className="rounded-md bg-[var(--surface-2)] px-3 py-2.5 text-[14px] text-[var(--ink-2)]">
+                {detail.emic.mode === "api" ? (
+                  c.emic_channel === "api" ? "已透過介接端點送出至 EMIC。" : "自動上報未成功，請於 EMIC 建立案件後回填案號。"
+                ) : (
+                  <>
+                    <b>人工登錄模式</b>：EMIC 介接規格尚未提供。請於 EMIC 建立案件，再將 EMIC 案號、處理狀態與處理單位回填於此；處理狀態與單位會公開顯示，EMIC 案號僅內部可見。
+                  </>
+                )}
+              </div>
+              {officer ? (
+                <>
+                  <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                    <label>
+                      <span className="af-label">EMIC 案號（內部）</span>
+                      <input className="af-input mt-1 font-mono" value={emicNo} onChange={(e) => setEmicNo(e.target.value)} maxLength={60} placeholder="例如 EMIC-1150903-0012" />
+                    </label>
+                    <label>
+                      <span className="af-label">EMIC 處理狀態（公開）</span>
+                      <input className="af-input mt-1" list="emic-status" value={emicStatus} onChange={(e) => setEmicStatus(e.target.value)} maxLength={60} />
+                      <datalist id="emic-status">
+                        {detail.emic.status_suggestions.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                    </label>
+                    <label className="sm:col-span-2">
+                      <span className="af-label">處理單位（公開）</span>
+                      <input className="af-input mt-1" value={emicUnit} onChange={(e) => setEmicUnit(e.target.value)} maxLength={100} placeholder="例如 公路局中區養護工程分局埔里工務段" />
+                    </label>
+                    <label className="sm:col-span-2">
+                      <span className="af-label">公開處理進度（選填）</span>
+                      <input className="af-input mt-1" value={emicNote} onChange={(e) => setEmicNote(e.target.value)} maxLength={1000} placeholder="例如 重機具進場清除土石，預計 2 小時後單線通行" />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="af-btn af-btn-secondary af-btn-lg" disabled={Boolean(busy)} onClick={() => run("emic-save", async () => { const r = await api.updateEmic(c.id, { emic_case_no: emicNo, emic_status: emicStatus, assigned_unit: emicUnit, note: emicNote.trim() || undefined }); setEmicNote(""); return r; }, "已更新 EMIC 資訊。")}>
+                      儲存
+                    </button>
+                    {c.status === "reported_emic" ? (
+                      <button type="button" className="af-btn af-btn-primary af-btn-lg" disabled={Boolean(busy)} onClick={() => run("emic-processing", () => api.updateEmic(c.id, { emic_case_no: emicNo, emic_status: emicStatus, assigned_unit: emicUnit, note: emicNote.trim() || undefined, status: "emic_processing" }), "已改為處理中。")}>
+                        儲存並改為處理中
+                      </button>
+                    ) : null}
+                    <button type="button" className="af-btn af-btn-lg font-bold text-white" style={{ background: "var(--st-done)" }} disabled={Boolean(busy)} onClick={() => window.confirm("確認此案件已處理完成並結案？結案後會自民眾地圖撤除。") && run("emic-close", () => api.updateEmic(c.id, { emic_case_no: emicNo, emic_status: emicStatus || "已處理完成", assigned_unit: emicUnit, note: emicNote.trim() || undefined, status: "closed" }), "已結案並自地圖撤除。")}>
+                      處理完成・結案
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <dl className="mt-3 grid grid-cols-[7rem_1fr] gap-y-1.5 text-[15px]">
+                  <dt className="text-[var(--muted)]">EMIC 案號</dt>
+                  <dd className="font-mono">{c.emic_case_no || "—"}</dd>
+                  <dt className="text-[var(--muted)]">處理狀態</dt>
+                  <dd>{c.emic_status || "—"}</dd>
+                  <dt className="text-[var(--muted)]">處理單位</dt>
+                  <dd>{c.assigned_unit || "—"}</dd>
+                </dl>
+              )}
+              <details className="mt-3">
+                <summary className="cursor-pointer text-[14px] text-[var(--muted)]">EMIC 欄位對照（暫定）</summary>
+                <table className="af-table mt-2">
+                  <thead>
+                    <tr>
+                      <th>上報欄位</th>
+                      <th>說明</th>
+                      <th>本系統來源</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.emic.field_map.map((f) => (
+                      <tr key={f.key}>
+                        <td className="font-mono text-[13px]">{f.key}</td>
+                        <td>{f.label}</td>
+                        <td className="text-[13px] text-[var(--muted)]">{f.source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            </Panel>
+          ) : null}
+
+          {/* ── community ── */}
+          {c.status === "community_open" ? (
+            <Panel title="開放民眾協助處理中" accent="var(--st-community)">
+              <p className="text-[15px] text-[var(--ink-2)]">民眾網站的案件頁已顯示「我來協助處理」。有民眾上傳處理完成照片時，LINE 群組會收到通知，案件會移到「待確認完成」。</p>
+              {officer ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="af-btn af-btn-secondary" disabled={Boolean(busy)} onClick={() => window.confirm("改列上報 EMIC？") && run("escalate", () => api.transitionCase(c.id, { status: "reported_emic", note: "情況超出民眾可處理範圍，改列上報 EMIC" }))}>
+                    改列上報 EMIC
+                  </button>
+                  <button type="button" className="af-btn af-btn-secondary" disabled={Boolean(busy)} onClick={() => window.confirm("確認已由其他方式處理完成並結案？") && run("close", () => api.transitionCase(c.id, { status: "closed", note: "承辦人員確認已處理完成" }), "已結案並自地圖撤除。")}>
+                    已處理完成・直接結案
+                  </button>
                 </div>
-                <input className="af-input" placeholder="派工備註（選填）" value={assignNote} onChange={(e) => setAssignNote(e.target.value)} />
-                <button
-                  type="button"
-                  className="af-btn af-btn-primary w-full"
-                  disabled={!unit.trim() || busy === "assign"}
-                  onClick={() =>
-                    run("assign", async () => {
-                      await api.assignCase(c.id, { unit_name: unit.trim(), team_lead: lead || undefined, contact: contact || undefined, note: assignNote || undefined, actor_name: actor });
-                      setUnit("");
-                      setLead("");
-                      setContact("");
-                      setAssignNote("");
-                    })
-                  }
-                >
-                  {c.status === "awaiting_dispatch" ? "確認成案並派遣" : "派遣／改派"}
-                </button>
-                <div className="text-[11px] text-[var(--muted)]">派工後公開網站立即顯示「已派員」與處理單位名稱；人員聯絡方式不公開。</div>
-              </div>
-            ) : (
-              <div className="text-xs text-[var(--muted)]">此案件已結案或不成案。</div>
-            )}
-              </div>
-            ) : null}
-          </section>
+              ) : null}
+            </Panel>
+          ) : null}
 
-          <section className="af-panel p-4">
-            <h2 className="af-h2 mb-2">更新處理狀態</h2>
-            <div className="flex flex-wrap gap-1.5">
-              {c.next_statuses.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className={`af-btn ${s === "dismissed" ? "af-btn-danger" : s === "resolved" || s === "closed" ? "af-btn-primary" : "af-btn-secondary"} text-xs`}
-                  disabled={busy === s || (s === "assigned" && !c.assigned_unit)}
-                  title={s === "assigned" && !c.assigned_unit ? "請先指定處理單位" : undefined}
-                  onClick={() => run(s, () => api.transitionCase(c.id, { status: s, actor_name: actor, public: true }))}
-                >
-                  {ACTION_LABEL[s] || STATUS_LABEL[s]}
-                </button>
-              ))}
-              {c.next_statuses.length === 0 ? <span className="text-xs text-[var(--muted)]">已無可用的狀態轉換。</span> : null}
-            </div>
-            <div className="mt-2 text-[11px] text-[var(--muted)]">僅允許狀態機定義的轉換；每次變更寫入公開時間軸與稽核軌跡。</div>
-          </section>
+          {c.status === "community_submitted" ? (
+            <Panel title="確認民眾的處理完成回報" accent="var(--st-community)">
+              <p className="text-[15px] text-[var(--ink-2)]">民眾於 {fmtTime(c.community_submitted_at)} 回報已處理完成。請檢視處理後照片：</p>
+              <div className="mt-3">
+                <PhotoStrip photos={citizenPhotos} emptyText="沒有處理後照片" />
+              </div>
+              {officer ? (
+                <>
+                  <textarea className="af-input mt-3" placeholder="說明（選填；不通過時會公開顯示原因）" value={confirmNote} onChange={(e) => setConfirmNote(e.target.value)} maxLength={500} />
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button type="button" className="af-btn af-btn-lg font-bold text-white" style={{ background: "var(--st-done)" }} disabled={Boolean(busy)} onClick={() => run("confirm-yes", () => api.confirmCommunity(c.id, { approve: true, note: confirmNote.trim() || undefined }), "已確認處理完成，結案並自地圖撤除。")}>
+                      確認通過・結案
+                    </button>
+                    <button type="button" className="af-btn af-btn-danger af-btn-lg" disabled={Boolean(busy)} onClick={() => run("confirm-no", () => api.confirmCommunity(c.id, { approve: false, note: confirmNote.trim() || undefined }), "已退回，重新開放民眾協助。")}>
+                      不通過・退回
+                    </button>
+                  </div>
+                  <button type="button" className="mt-2 text-[14px] text-[var(--focus)] hover:underline" disabled={Boolean(busy)} onClick={() => window.confirm("改列上報 EMIC？") && run("escalate", () => api.transitionCase(c.id, { status: "reported_emic", note: "民眾處理後仍需權責單位處理，改列上報 EMIC" }))}>
+                    仍需權責單位處理？改列上報 EMIC
+                  </button>
+                </>
+              ) : null}
+            </Panel>
+          ) : null}
 
-          <section className="af-panel p-4">
-            <h2 className="af-h2 mb-2">處理紀錄／公開進度</h2>
-            <textarea className="af-input" placeholder="例如：重機具進場清除土石，單線通行預計 2 小時後恢復" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-              <label className="inline-flex items-center gap-1.5">
-                <input type="radio" checked={notePublic} onChange={() => setNotePublic(true)} /> 公開顯示
-              </label>
-              <label className="inline-flex items-center gap-1.5">
-                <input type="radio" checked={!notePublic} onChange={() => setNotePublic(false)} /> 僅內部
-              </label>
-              <input className="af-input !w-32 !py-1 text-xs" value={actor} onChange={(e) => setActor(e.target.value)} placeholder="操作者" />
-              <button
-                type="button"
-                className="af-btn af-btn-secondary ml-auto"
-                disabled={!note.trim() || busy === "note"}
-                onClick={() =>
-                  run("note", async () => {
-                    await api.addCaseUpdate(c.id, { note: note.trim(), public: notePublic, actor_name: actor });
-                    setNote("");
-                  })
-                }
-              >
-                新增紀錄
-              </button>
-            </div>
-          </section>
+          {c.status === "closed" || c.status === "dismissed" ? (
+            <Panel title={c.status === "closed" ? "已結案" : "不成案"} accent={c.status === "closed" ? "var(--st-done)" : "var(--st-dismissed)"}>
+              <p className="text-[15px] text-[var(--ink-2)]">{c.status === "closed" ? "此案件已處理完成，並已自民眾地圖撤除。" : "此通報經審核判定不成案，不會公開於地圖。"}</p>
+            </Panel>
+          ) : null}
+
+          {/* ── progress notes ── */}
+          {officer && c.status !== "dismissed" ? (
+            <Panel title="處理紀錄">
+              <textarea className="af-input" placeholder="例如：已聯繫里長確認現場狀況" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
+              <div className="mt-2 flex flex-wrap items-center gap-4 text-[15px]">
+                <label className="inline-flex items-center gap-1.5">
+                  <input type="radio" className="h-4 w-4" checked={notePublic} onChange={() => setNotePublic(true)} /> 公開顯示
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <input type="radio" className="h-4 w-4" checked={!notePublic} onChange={() => setNotePublic(false)} /> 僅內部
+                </label>
+                <button type="button" className="af-btn af-btn-secondary ml-auto" disabled={!note.trim() || busy === "note"} onClick={() => run("note", async () => { const r = await api.addCaseUpdate(c.id, { note: note.trim(), public: notePublic }); setNote(""); return r; }, "已新增紀錄。")}>
+                  新增紀錄
+                </button>
+              </div>
+            </Panel>
+          ) : null}
 
           <section className="af-panel overflow-hidden">
             <div className="h-72">
-              <TerrainMap center={[c.lat, c.lon]} zoom={13} features={features} visible={{ incident_cases: true, citizen_reports: true, dispatch: true }} enabledLayers={["incident_cases", "citizen_reports"]} routes={routes} vehicles={vehicles} threeD={false} />
+              <TerrainMap center={[c.lat, c.lon]} zoom={13} features={features} visible={mapVisible} enabledLayers={["incident_cases", "citizen_reports"]} threeD={false} />
             </div>
             {detail.nearby.length ? (
               <div className="p-3">
                 <div className="af-eyebrow mb-1">附近案件（2 公里內）</div>
-                <ul className="space-y-1 text-xs">
+                <ul className="space-y-1.5 text-[15px]">
                   {detail.nearby.map((n) => (
                     <li key={n.id} className="flex items-center justify-between gap-2">
                       <Link href={`/console/platforms/${id}/cases/${n.id}`} className="truncate text-[var(--ink)] hover:underline">
                         {n.case_number} {n.title}
                       </Link>
                       <span className="flex items-center gap-2 text-[var(--muted)]">
-                        <StatusPill status={n.status} /> {fmtMeters(n.distance_m)}
+                        <StatusPill status={n.status} console /> {fmtMeters(n.distance_m)}
                       </span>
                     </li>
                   ))}
@@ -292,108 +406,105 @@ export default function CaseWorkbenchPage() {
           </section>
         </div>
 
-        {/* reports / photos / timeline */}
-        <div className="space-y-3 xl:col-span-8">
+        <div className="space-y-4 xl:col-span-7">
           <section className="af-panel">
-            <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: "var(--line)" }}>
-              <h2 className="af-h2">所有回報（含內部識別資訊）</h2>
-              <span className="text-[11px] text-[var(--muted)]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+              <h2 className="text-[19px] font-semibold text-[var(--ink)]">民眾回報</h2>
+              <span className="text-[14px] text-[var(--muted)]">
                 {Object.entries(detail.reporter_roles)
                   .map(([k, v]) => `${ROLE_LABEL[k] || k} ${v}`)
                   .join(" · ")}
               </span>
             </div>
-            <table className="af-table">
-              <thead>
-                <tr>
-                  <th>時間</th>
-                  <th>類別／描述</th>
-                  <th>地點</th>
-                  <th>回報者</th>
-                  <th>分級</th>
-                  <th className="text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.reports.map((r) => (
-                  <tr key={r.id} className={r.status === "rejected" ? "opacity-50" : ""}>
-                    <td className="font-mono text-[11px] text-[var(--muted)]">{fmtTime(r.created_at)}</td>
-                    <td>
-                      <div className="font-medium">{CATEGORY_LABEL[r.category] || r.category}</div>
-                      <div className="text-xs text-[var(--ink-2)]">{r.description || "（無描述）"}</div>
-                      {r.photo_count ? <div className="text-[11px] text-[var(--muted)]">{r.photo_count} 張照片</div> : null}
-                    </td>
-                    <td className="text-xs">
-                      {r.address || r.town || "—"}
-                      {r.lat != null ? (
-                        <div className="font-mono text-[10.5px] text-[var(--muted)]">
-                          {r.lat.toFixed(5)}, {r.lon?.toFixed(5)}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="text-xs">
-                      {ROLE_LABEL[r.reporter_role] || r.reporter_role}
-                      <div className="text-[11px] text-[var(--muted)]">
-                        {r.reporter_name || "—"} {r.reporter_contact || ""}
-                        {!r.has_identity ? " · 匿名" : ""}
-                      </div>
-                    </td>
-                    <td>
-                      <SeverityTag severity={r.triage_severity} withLabel={false} />
-                    </td>
-                    <td className="text-right">
-                      {r.status !== "rejected" ? (
-                        <button type="button" className="af-btn af-btn-ghost !py-0.5 text-[11px]" disabled={busy === `rej-${r.id}`} onClick={() => run(`rej-${r.id}`, () => api.rejectReport(r.id, "承辦判定不可信"))}>
-                          排除
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-[var(--muted)]">已排除</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="af-panel p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="af-h2">照片（處理前／現場／處理後）</h2>
-              <div className="flex items-center gap-1.5 text-xs">
-                <select className="af-input !w-auto !py-0.5 text-xs" value={photoKind} onChange={(e) => setPhotoKind(e.target.value as typeof photoKind)}>
-                  <option value="before">處理前</option>
-                  <option value="scene">現場</option>
-                  <option value="after">處理後</option>
-                </select>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) run("photo", () => api.uploadCasePhoto(c.id, f, photoKind)); e.target.value = ""; }} />
-                <button type="button" className="af-btn af-btn-secondary !py-0.5 text-xs" disabled={busy === "photo"} onClick={() => fileRef.current?.click()}>
-                  上傳單位照片
-                </button>
+            {!detail.reports.some((r) => r.reporter_name || r.reporter_contact || r.reporter_email || r.pii_hidden) ? null : detail.pii_visible ? (
+              <div className="border-b px-4 py-2 text-[13px] text-[var(--muted)]" style={{ borderColor: "var(--line)" }}>
+                含個人聯絡資料，僅供查證聯繫使用；本次查閱已留存紀錄。
               </div>
+            ) : (
+              <div className="border-b px-4 py-2 text-[13px] text-[var(--muted)]" style={{ borderColor: "var(--line)" }}>
+                您的角色不可檢視通報者個人資料。
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="af-table">
+                <thead>
+                  <tr>
+                    <th>時間</th>
+                    <th>類別／描述</th>
+                    <th>地點</th>
+                    <th>回報者</th>
+                    <th className="text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.reports.map((r) => (
+                    <tr key={r.id} className={r.status === "rejected" ? "opacity-50" : ""}>
+                      <td className="whitespace-nowrap font-mono text-[13px] text-[var(--muted)]">{fmtTime(r.created_at)}</td>
+                      <td>
+                        <div className="font-medium">{CATEGORY_LABEL[r.category] || r.category}</div>
+                        <div className="text-[15px] text-[var(--ink-2)]">{r.description || "（無描述）"}</div>
+                        {r.photo_count ? <div className="text-[13px] text-[var(--muted)]">{r.photo_count} 張照片</div> : null}
+                      </td>
+                      <td className="text-[15px]">
+                        {r.address || r.town || "—"}
+                        {r.lat != null ? (
+                          <div className="font-mono text-[12.5px] text-[var(--muted)]">
+                            {r.lat.toFixed(5)}, {r.lon?.toFixed(5)}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="text-[15px]">
+                        {ROLE_LABEL[r.reporter_role] || r.reporter_role}
+                        {!detail.reports.some((r) => r.reporter_name || r.reporter_contact || r.reporter_email || r.pii_hidden) ? null : detail.pii_visible ? (
+                          <div className="text-[14px] text-[var(--ink-2)]">
+                            {[r.reporter_name, r.reporter_contact, r.reporter_email].filter(Boolean).join(" · ") || (r.has_identity ? "未留聯絡資料" : "匿名")}
+                          </div>
+                        ) : r.pii_hidden ? (
+                          <div className="text-[13px] text-[var(--muted)]">已留聯絡資料（不可檢視）</div>
+                        ) : null}
+                        {r.notify_opt_in ? <div className="text-[13px] text-[var(--st-active)]">訂閱進度通知</div> : null}
+                      </td>
+                      <td className="text-right">
+                        {r.status !== "rejected" ? (
+                          officer ? (
+                            <button type="button" className="af-btn af-btn-ghost" disabled={busy === `rej-${r.id}`} onClick={() => run(`rej-${r.id}`, () => api.rejectReport(r.id, "承辦判定不可信"))}>
+                              排除
+                            </button>
+                          ) : null
+                        ) : (
+                          <span className="text-[13px] text-[var(--muted)]">已排除</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <PhotoStrip photos={detail.photos} emptyText="尚無照片。民眾通報附帶的照片與處理單位上傳的前後對照會顯示於此。" />
           </section>
 
           <section className="af-panel p-4">
-            <h2 className="af-h2 mb-3">完整時間軸（含內部紀錄）</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-[19px] font-semibold text-[var(--ink)]">照片</h2>
+              {officer ? (
+                <div className="flex items-center gap-2">
+                  <select className="af-input !w-auto !py-1.5" value={photoKind} onChange={(e) => setPhotoKind(e.target.value as typeof photoKind)}>
+                    <option value="before">處理前</option>
+                    <option value="scene">現場</option>
+                    <option value="after">處理後</option>
+                  </select>
+                  <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) run("photo", () => api.uploadCasePhoto(c.id, f, photoKind), "已上傳照片。"); e.target.value = ""; }} />
+                  <button type="button" className="af-btn af-btn-secondary" disabled={busy === "photo"} onClick={() => fileRef.current?.click()}>
+                    上傳照片
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <PhotoStrip photos={detail.photos} emptyText="尚無照片。民眾通報與協助處理的照片、承辦上傳的照片會顯示於此。" />
+          </section>
+
+          <section className="af-panel p-4">
+            <h2 className="mb-3 text-[19px] font-semibold text-[var(--ink)]">完整時間軸（含內部紀錄）</h2>
             <CaseTimeline items={timelineItems} dense />
-            {detail.assignments.length ? (
-              <div className="mt-4">
-                <div className="af-eyebrow mb-1">派工紀錄</div>
-                <ul className="space-y-1 text-xs">
-                  {detail.assignments.map((a) => (
-                    <li key={a.id} className="flex flex-wrap gap-2 text-[var(--ink-2)]">
-                      <span className="font-mono text-[var(--muted)]">{fmtTime(a.created_at)}</span>
-                      <span className="font-medium text-[var(--ink)]">{a.unit_name}</span>
-                      <span>{a.team_lead}</span>
-                      <span className="text-[var(--muted)]">{a.contact}</span>
-                      <span className="af-chip">{a.status === "active" ? "執行中" : a.status === "completed" ? "已完成" : "已取消"}</span>
-                      {a.note ? <span className="text-[var(--muted)]">{a.note}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </section>
         </div>
       </div>

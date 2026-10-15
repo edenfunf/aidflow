@@ -22,8 +22,8 @@ export function BrandLockup({ subtitle, inverted = false, size = 28 }: { subtitl
     <span className="inline-flex items-center gap-2.5">
       <BrandMark size={size} inverted={inverted} />
       <span className="leading-none">
-        <span className={`block text-[15px] font-semibold tracking-[-0.01em] ${inverted ? "text-white" : "text-[var(--ink)]"}`}>AidFlow</span>
-        {subtitle ? <span className={`mt-0.5 block text-[10px] tracking-[0.12em] ${inverted ? "text-white/60" : "text-[var(--muted)]"}`}>{subtitle}</span> : null}
+        <span className={`block text-[17px] font-semibold tracking-[-0.01em] ${inverted ? "text-white" : "text-[var(--ink)]"}`}>AidFlow</span>
+        {subtitle ? <span className={`mt-0.5 block text-[12px] tracking-[0.12em] ${inverted ? "text-white/60" : "text-[var(--muted)]"}`}>{subtitle}</span> : null}
       </span>
     </span>
   );

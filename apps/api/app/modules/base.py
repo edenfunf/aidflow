@@ -1,15 +1,15 @@
 """Module contract for the AidFlow capability registry.
 
 A *module* is a reusable, deterministic building block of a disaster
-platform. The agent planner only *suggests* module ids; the platform composer
-turns an approved selection into a Platform + PlatformModuleConfig rows, and
-the public portal / console render whatever the platform has enabled.
+platform. The platform composer turns the hazards of a named disaster into a
+Platform + PlatformModuleConfig rows, and the public portal / console render
+whatever the platform has enabled.
 
 Module types:
   - feature    — a capability surfaced in the UI (report form, timeline, …)
   - layer      — a map layer (citizen reports, clusters, official data …)
   - processor  — a deterministic engine that runs on the report pipeline
-  - action     — an outbound side effect (LINE notify)
+  - action     — an outbound side effect (LINE group, e-mail, EMIC)
   - connector  — an official open-data source feeding one or more layers
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 DOMAINS: dict[str, str] = {
     "reporting": "災情通報",
     "processing": "案件處理",
-    "dispatch": "派工調度",
+    "handling": "審核與處理",
     "visualization": "災情視覺化",
     "official_data": "官方資料",
     "notification": "通知推播",

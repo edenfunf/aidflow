@@ -9,29 +9,27 @@
     "lint": "next lint",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "prebuild": "node scripts/copy-maplibre-worker.mjs"
   },
   "dependencies": {
-    "leaflet": "1.9.4",
-    "leaflet.heat": "^0.2.0",
-    "leaflet.markercluster": "^1.5.3",
-    "maplibre-gl": "^5.24.0",
-    "next": "14.2.15",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-leaflet": "4.2.1"
+    "maplibre-gl": "^6.14.0",
+    "next": "^15.5.28",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.14.0",
-    "@types/leaflet": "1.9.12",
-    "@types/leaflet.markercluster": "^1.5.4",
     "@types/node": "20.16.11",
-    "@types/react": "18.3.11",
-    "@types/react-dom": "18.3.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "autoprefixer": "10.4.20",
-    "postcss": "8.4.47",
-    "tailwindcss": "3.4.13",
+    "postcss": "8.5.30",
+    "tailwindcss": "3.4.19",
     "typescript": "5.6.3",
     "wrangler": "^4.49.1"
+  },
+  "overrides": {
+    "postcss": "8.5.30"
   }
 }

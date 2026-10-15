@@ -1,8 +1,10 @@
 """Module registry catalogue + connector status."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.security import require
+from app.domain.permissions import Perm
 from app.modules import DOMAINS, registry
 from app.modules.base import ModuleSpec
 from app.schemas.module import (
@@ -15,7 +17,7 @@ from app.schemas.module import (
 )
 from app.services import official_data_service
 
-router = APIRouter(prefix="/v1", tags=["modules"])
+router = APIRouter(prefix="/v1", tags=["modules"], dependencies=[Depends(require(Perm.view_console))])
 
 
 def _item(spec: ModuleSpec) -> ModuleSpecItem:

@@ -22,9 +22,10 @@ jobs:
         run: bash scripts/wait_for_api.sh
 
       - name: Run pytest
-        # unit tests (domain rules, clustering, privacy, connector normalisers)
-        # plus DB-backed integration tests (planner → platform → report →
-        # cluster → case → dispatch → public timeline, demo scenario)
+        # unit tests (domain rules, permissions, clustering, privacy, connector
+        # normalisers) plus DB-backed integration tests (platform → report →
+        # cluster → case → review → EMIC / community → public timeline, login
+        # and roles, LINE webhook, demo scenario)
         run: docker compose exec -T api pytest -q
 
       - name: Tear down

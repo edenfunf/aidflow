@@ -55,8 +55,8 @@ export default function CompareSlider({ before, after, beforeLabel = "處理前"
           <path d="M9 6 3 12l6 6M15 6l6 6-6 6" />
         </svg>
       </button>
-      <span className="absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[10.5px] font-medium text-white">{afterLabel}</span>
-      <span className="absolute right-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[10.5px] font-medium text-white">{beforeLabel}</span>
+      <span className="absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[12.5px] font-medium text-white">{afterLabel}</span>
+      <span className="absolute right-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[12.5px] font-medium text-white">{beforeLabel}</span>
     </div>
   );
 }

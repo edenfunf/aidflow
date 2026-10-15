@@ -6,4 +6,6 @@
 docker compose up -d api && bash client/export_openapi.sh
 ```
 
-公開端點位於 `/v1/public/*`；其餘端點在設定 `ADMIN_API_KEY` 時需要 `X-API-Key`。
+公開端點位於 `/v1/public/*`（免登入）；`/v1/health` 與 `/v1/line/webhook`（LINE 簽章驗證）亦免登入。
+其餘政府管理後台端點需 `Authorization: Bearer <token>`（`POST /v1/auth/login` 取得），並依角色授權；
+系統服務可改用 `X-API-Key`（`ADMIN_API_KEY`）。

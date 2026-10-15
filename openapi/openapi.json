@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AidFlow API",
-    "description": "AidFlow — 災害情境驅動的災情通報、案件處理、派工與視覺化平台生成器。公開端點位於 /v1/public；其餘為政府後台端點。",
+    "description": "AidFlow 災情通報與處理平台：民眾通報 → 同地點聚合 → 承辦審核（上報 EMIC／民間可處理）→ 處理進度公開。公開端點位於 /v1/public（免登入）；其餘為政府管理後台端點，需登入並依角色授權。",
     "version": "1.0.0"
   },
   "paths": {
@@ -19,6 +19,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Health V1 Health Get"
                 }
@@ -41,6 +42,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response List Platforms V1 Public Platforms Get"
                 }
@@ -75,6 +77,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Platform V1 Public Platforms  Slug  Get"
                 }
               }
@@ -140,7 +143,7 @@
         "tags": [
           "public"
         ],
-        "summary": "Cases / clusters / reports (de-identified)",
+        "summary": "Live cases / clusters / reports (de-identified; closed cases removed)",
         "operationId": "get_map_v1_public_platforms__slug__map_get",
         "parameters": [
           {
@@ -235,10 +238,10 @@
                   "type": "null"
                 }
               ],
-              "description": "pending | active | done | open",
+              "description": "pending | active | community | done | open",
               "title": "Phase"
             },
-            "description": "pending | active | done | open"
+            "description": "pending | active | community | done | open"
           },
           {
             "name": "status",
@@ -415,6 +418,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PublicCaseDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/platforms/{slug}/cases/{case_id}/community-report": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "民眾回報已協助處理完成（上傳處理完成照片；免登入）",
+        "operationId": "community_report_v1_public_platforms__slug__cases__case_id__community_report_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_community_report_v1_public_platforms__slug__cases__case_id__community_report_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunitySubmitResponse"
                 }
               }
             }
@@ -637,6 +702,52 @@
         }
       }
     },
+    "/v1/public/unsubscribe": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "取消案件進度通知（信件中的連結）",
+        "operationId": "unsubscribe_v1_public_unsubscribe_post",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 10,
+              "maxLength": 100,
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Unsubscribe V1 Public Unsubscribe Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/public/media/{photo_id}": {
       "get": {
         "tags": [
@@ -745,16 +856,6 @@
               "type": "string",
               "title": "Layer"
             }
-          },
-          {
-            "name": "refresh",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Refresh"
-            }
           }
         ],
         "responses": {
@@ -781,18 +882,67 @@
         }
       }
     },
-    "/v1/agent/plan": {
+    "/v1/public/radar/{stamp}.{ext}": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Cached radar composite frame (proxied from CWA)",
+        "operationId": "radar_frame_v1_public_radar__stamp___ext__get",
+        "parameters": [
+          {
+            "name": "stamp",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stamp"
+            }
+          },
+          {
+            "name": "ext",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ext"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
       "post": {
         "tags": [
-          "agent"
+          "auth"
         ],
-        "summary": "Understand a disaster brief and propose a platform",
-        "operationId": "plan_v1_agent_plan_post",
+        "summary": "登入（取得權杖）",
+        "operationId": "login_v1_auth_login_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentPlanRequest"
+                "$ref": "#/components/schemas/LoginRequest"
               }
             }
           },
@@ -804,7 +954,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentPlanResponse"
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Login V1 Auth Login Post"
                 }
               }
             }
@@ -822,18 +974,130 @@
         }
       }
     },
-    "/v1/agent/execute": {
+    "/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "目前登入者與權限",
+        "operationId": "me_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Me V1 Auth Me Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
       "post": {
         "tags": [
-          "agent"
+          "auth"
         ],
-        "summary": "Compose the approved plan into a platform",
-        "operationId": "execute_v1_agent_execute_post",
+        "summary": "登出（寫入稽核紀錄）",
+        "operationId": "logout_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Logout V1 Auth Logout Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "變更自己的密碼",
+        "operationId": "change_password_v1_auth_password_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentExecuteRequest"
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Change Password V1 Auth Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "帳號清單",
+        "operationId": "list_users_v1_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Users V1 Users Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "新增帳號",
+        "operationId": "create_user_v1_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreateRequest"
               }
             }
           },
@@ -845,7 +1109,159 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentExecuteResponse"
+                  "$ref": "#/components/schemas/UserItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/{user_id}": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "修改帳號（名稱、角色、啟停用、重設密碼）",
+        "operationId": "update_user_v1_users__user_id__patch",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "角色清單",
+        "operationId": "roles_v1_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Roles V1 Roles Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "稽核紀錄（登入、帳號、個資查閱、平台設定）",
+        "operationId": "security_audit_v1_admin_audit_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "auth | user | pii | line | platform",
+              "title": "Kind"
+            },
+            "description": "auth | user | pii | line | platform"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Security Audit V1 Admin Audit Get"
                 }
               }
             }
@@ -1104,7 +1520,7 @@
         "tags": [
           "platforms"
         ],
-        "summary": "Compose a platform directly",
+        "summary": "建立災害平台",
         "operationId": "create_platform_v1_platforms_post",
         "requestBody": {
           "required": true,
@@ -1123,6 +1539,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlatformDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/options": {
+      "get": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "災害類型與縣市鄉鎮選項（建立平台用）",
+        "operationId": "options_v1_platforms_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Options V1 Platforms Options Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/preview": {
+      "post": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "依災害名稱與類型預覽平台內容（不寫入）",
+        "operationId": "preview_v1_platforms_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Preview V1 Platforms Preview Post"
                 }
               }
             }
@@ -1406,7 +1888,7 @@
         "tags": [
           "platforms"
         ],
-        "summary": "Internal report list (includes PII)",
+        "summary": "Internal report list",
         "operationId": "list_reports_v1_platforms__platform_id__reports_get",
         "parameters": [
           {
@@ -1554,7 +2036,7 @@
         "tags": [
           "platforms"
         ],
-        "summary": "Report clusters (open ones are candidates for manual promotion)",
+        "summary": "Report clusters (open ones are candidates for 人工成案)",
         "operationId": "list_clusters_v1_platforms__platform_id__clusters_get",
         "parameters": [
           {
@@ -1591,6 +2073,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response List Clusters V1 Platforms  Platform Id  Clusters Get"
                 }
               }
@@ -1614,7 +2097,7 @@
         "tags": [
           "platforms"
         ],
-        "summary": "Manually create a case from a cluster below threshold",
+        "summary": "人工成案：未達門檻的通報直接送入審核",
         "operationId": "promote_cluster_v1_platforms__platform_id__clusters__cluster_id__promote_post",
         "parameters": [
           {
@@ -1635,22 +2118,6 @@
               "type": "string",
               "format": "uuid",
               "title": "Cluster Id"
-            }
-          },
-          {
-            "name": "actor_name",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Actor Name"
             }
           }
         ],
@@ -1788,7 +2255,7 @@
         "tags": [
           "platforms"
         ],
-        "summary": "Audit trail (event outbox) for this platform",
+        "summary": "Case / report event feed for this platform",
         "operationId": "audit_v1_platforms__platform_id__audit_get",
         "parameters": [
           {
@@ -1832,7 +2299,296 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Audit V1 Platforms  Platform Id  Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/{platform_id}/line": {
+      "get": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "LINE 群組通知狀態（含綁定代碼）",
+        "operationId": "line_status_v1_platforms__platform_id__line_get",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Line Status V1 Platforms  Platform Id  Line Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "以群組 ID 手動綁定",
+        "operationId": "line_bind_v1_platforms__platform_id__line_put",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Line Bind V1 Platforms  Platform Id  Line Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "解除 LINE 群組綁定",
+        "operationId": "line_unbind_v1_platforms__platform_id__line_delete",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Line Unbind V1 Platforms  Platform Id  Line Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/{platform_id}/line/code": {
+      "post": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "重新產生綁定代碼",
+        "operationId": "line_regenerate_code_v1_platforms__platform_id__line_code_post",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Line Regenerate Code V1 Platforms  Platform Id  Line Code Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/{platform_id}/line/test": {
+      "post": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "發送測試訊息到綁定的群組",
+        "operationId": "line_test_v1_platforms__platform_id__line_test_post",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Line Test V1 Platforms  Platform Id  Line Test Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/{platform_id}/notifications": {
+      "get": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "通知紀錄（LINE／Email）",
+        "operationId": "notifications_v1_platforms__platform_id__notifications_get",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Notifications V1 Platforms  Platform Id  Notifications Get"
                 }
               }
             }
@@ -1881,10 +2637,10 @@
                   "type": "null"
                 }
               ],
-              "description": "pending | active | done | open",
+              "description": "pending | active | community | queued | done | open",
               "title": "Phase"
             },
-            "description": "pending | active | done | open"
+            "description": "pending | active | community | queued | done | open"
           },
           {
             "name": "status",
@@ -1903,6 +2659,24 @@
               "title": "Status"
             },
             "description": "comma separated statuses"
+          },
+          {
+            "name": "track",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "emic | community",
+              "title": "Track"
+            },
+            "description": "emic | community"
           },
           {
             "name": "category",
@@ -1976,11 +2750,11 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "created_desc | created_asc | severity_desc | reports_desc | updated_desc",
-              "default": "created_desc",
+              "description": "severity_desc | created_desc | created_asc | reports_desc | updated_desc",
+              "default": "severity_desc",
               "title": "Sort"
             },
-            "description": "created_desc | created_asc | severity_desc | reports_desc | updated_desc"
+            "description": "severity_desc | created_desc | created_asc | reports_desc | updated_desc"
           },
           {
             "name": "limit",
@@ -2073,13 +2847,13 @@
         }
       }
     },
-    "/v1/cases/{case_id}/transition": {
+    "/v1/cases/{case_id}/review": {
       "post": {
         "tags": [
           "cases"
         ],
-        "summary": "Move the case along the state machine",
-        "operationId": "transition_v1_cases__case_id__transition_post",
+        "summary": "審核點：上報 EMIC／民間可處理／不成案",
+        "operationId": "review_v1_cases__case_id__review_post",
         "parameters": [
           {
             "name": "case_id",
@@ -2097,7 +2871,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TransitionRequest"
+                "$ref": "#/components/schemas/ReviewRequest"
               }
             }
           }
@@ -2126,13 +2900,13 @@
         }
       }
     },
-    "/v1/cases/{case_id}/assign": {
+    "/v1/cases/{case_id}/emic": {
       "post": {
         "tags": [
           "cases"
         ],
-        "summary": "縣府確認並派工",
-        "operationId": "assign_v1_cases__case_id__assign_post",
+        "summary": "登錄 EMIC 案號／處理狀態，並可改為處理中或結案",
+        "operationId": "update_emic_v1_cases__case_id__emic_post",
         "parameters": [
           {
             "name": "case_id",
@@ -2150,7 +2924,113 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssignRequest"
+                "$ref": "#/components/schemas/EmicUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/community/confirm": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "確認民眾處理完成（通過＝結案並自地圖撤除；不通過＝重新開放）",
+        "operationId": "community_confirm_v1_cases__case_id__community_confirm_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cases/{case_id}/transition": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Move the case along the state machine",
+        "operationId": "transition_v1_cases__case_id__transition_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionRequest"
               }
             }
           }
@@ -2291,7 +3171,7 @@
           "cases",
           "reports"
         ],
-        "summary": "Report detail (internal, includes PII)",
+        "summary": "Report detail (internal; PII for view_pii roles)",
         "operationId": "get_report_v1_reports__report_id__get",
         "parameters": [
           {
@@ -2312,6 +3192,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Report V1 Reports  Report Id  Get"
                 }
               }
@@ -2416,6 +3297,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Seed Nantou V1 Demo Nantou Post"
                 }
               }
@@ -2446,6 +3328,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Demo V1 Demo Nantou Get"
                 }
               }
@@ -2475,300 +3358,171 @@
           }
         }
       }
+    },
+    "/v1/platforms/{platform_id}/demo": {
+      "post": {
+        "tags": [
+          "demo"
+        ],
+        "summary": "Load the demo story into an existing platform (「帶入示範資料」)",
+        "operationId": "seed_platform_demo_v1_platforms__platform_id__demo_post",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "replace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Replace"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Seed Platform Demo V1 Platforms  Platform Id  Demo Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/platforms/prune": {
+      "post": {
+        "tags": [
+          "demo"
+        ],
+        "summary": "Retire generated platforms (keeps the built-in demo)",
+        "operationId": "prune_platforms_v1_platforms_prune_post",
+        "parameters": [
+          {
+            "name": "keep",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Keep"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Prune Platforms V1 Platforms Prune Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/line/webhook": {
+      "post": {
+        "tags": [
+          "line"
+        ],
+        "summary": "LINE webhook（群組加入與綁定）",
+        "operationId": "webhook_v1_line_webhook_post",
+        "parameters": [
+          {
+            "name": "x-line-signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Line-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Webhook V1 Line Webhook Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
-      "AgentExecuteRequest": {
+      "Body_community_report_v1_public_platforms__slug__cases__case_id__community_report_post": {
         "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "brief": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 4000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Brief"
-          },
-          "hazards": {
+          "files": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "binary"
             },
             "type": "array",
-            "minItems": 1,
-            "title": "Hazards"
-          },
-          "county": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 20
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "County"
-          },
-          "towns": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Towns"
-          },
-          "modules": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Modules"
-          },
-          "layers": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Layers"
-          },
-          "report_categories": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Report Categories"
-          },
-          "cluster_policy": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ClusterPolicyInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "configuration": {
-            "anyOf": [
-              {
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Configuration"
-          },
-          "publish": {
-            "type": "boolean",
-            "title": "Publish",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "hazards"
-        ],
-        "title": "AgentExecuteRequest",
-        "description": "The approved plan. Same shape as PlatformCreate."
-      },
-      "AgentExecuteResponse": {
-        "properties": {
-          "platform": {
-            "$ref": "#/components/schemas/PlatformDetail"
-          },
-          "public_url": {
-            "type": "string",
-            "title": "Public Url"
-          },
-          "console_url": {
-            "type": "string",
-            "title": "Console Url"
-          },
-          "enabled_modules": {
-            "type": "integer",
-            "title": "Enabled Modules"
-          },
-          "enabled_layers": {
-            "type": "integer",
-            "title": "Enabled Layers"
-          }
-        },
-        "type": "object",
-        "required": [
-          "platform",
-          "public_url",
-          "console_url",
-          "enabled_modules",
-          "enabled_layers"
-        ],
-        "title": "AgentExecuteResponse"
-      },
-      "AgentPlanRequest": {
-        "properties": {
-          "message": {
-            "type": "string",
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Message",
-            "description": "災害背景描述"
-          }
-        },
-        "type": "object",
-        "required": [
-          "message"
-        ],
-        "title": "AgentPlanRequest"
-      },
-      "AgentPlanResponse": {
-        "properties": {
-          "scenario": {
-            "$ref": "#/components/schemas/ScenarioAnalysis"
-          },
-          "suggested_name": {
-            "type": "string",
-            "title": "Suggested Name"
-          },
-          "suggested_modules": {
-            "items": {
-              "$ref": "#/components/schemas/ModuleSuggestion"
-            },
-            "type": "array",
-            "title": "Suggested Modules"
-          },
-          "suggested_layers": {
-            "items": {
-              "$ref": "#/components/schemas/LayerSuggestion"
-            },
-            "type": "array",
-            "title": "Suggested Layers"
-          },
-          "suggested_report_categories": {
-            "items": {
-              "$ref": "#/components/schemas/CategorySuggestion"
-            },
-            "type": "array",
-            "title": "Suggested Report Categories"
-          },
-          "suggested_cluster_policy": {
-            "$ref": "#/components/schemas/ClusterPolicyInput"
-          },
-          "suggested_workflow": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Suggested Workflow"
-          },
-          "reasons": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Reasons"
-          },
-          "intent_mode": {
-            "type": "string",
-            "title": "Intent Mode"
-          },
-          "ai_enabled": {
-            "type": "boolean",
-            "title": "Ai Enabled"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "draft": {
-            "$ref": "#/components/schemas/PlatformCreate"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scenario",
-          "suggested_name",
-          "suggested_modules",
-          "suggested_layers",
-          "suggested_report_categories",
-          "suggested_cluster_policy",
-          "suggested_workflow",
-          "reasons",
-          "intent_mode",
-          "ai_enabled",
-          "draft"
-        ],
-        "title": "AgentPlanResponse"
-      },
-      "AssignRequest": {
-        "properties": {
-          "unit_name": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Unit Name",
-            "description": "處理單位，例如 仁愛鄉公所工務課"
-          },
-          "team_lead": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Team Lead"
-          },
-          "contact": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact"
+            "title": "Files",
+            "description": "處理完成照片，1–3 張"
           },
           "note": {
             "anyOf": [
@@ -2782,87 +3536,24 @@
             ],
             "title": "Note"
           },
-          "actor_name": {
+          "helper_name": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 100
+                "maxLength": 60
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Actor Name"
+            "title": "Helper Name"
           }
         },
         "type": "object",
         "required": [
-          "unit_name"
+          "files"
         ],
-        "title": "AssignRequest"
-      },
-      "AssignmentItem": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "unit_name": {
-            "type": "string",
-            "title": "Unit Name"
-          },
-          "team_lead": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Team Lead"
-          },
-          "contact": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "unit_name",
-          "status",
-          "created_at"
-        ],
-        "title": "AssignmentItem"
+        "title": "Body_community_report_v1_public_platforms__slug__cases__case_id__community_report_post"
       },
       "Body_upload_case_photo_v1_cases__case_id__photos_post": {
         "properties": {
@@ -2934,15 +3625,17 @@
               }
             ]
           },
-          "assignment": {
+          "result": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AssignmentItem"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Result"
           }
         },
         "type": "object",
@@ -2962,13 +3655,6 @@
             },
             "type": "array",
             "title": "Reports"
-          },
-          "assignments": {
-            "items": {
-              "$ref": "#/components/schemas/AssignmentItem"
-            },
-            "type": "array",
-            "title": "Assignments"
           },
           "events": {
             "items": {
@@ -2997,17 +3683,25 @@
             },
             "type": "object",
             "title": "Reporter Roles"
+          },
+          "emic": {
+            "$ref": "#/components/schemas/EmicInfo"
+          },
+          "pii_visible": {
+            "type": "boolean",
+            "title": "Pii Visible"
           }
         },
         "type": "object",
         "required": [
           "case",
           "reports",
-          "assignments",
           "events",
           "photos",
           "nearby",
-          "reporter_roles"
+          "reporter_roles",
+          "emic",
+          "pii_visible"
         ],
         "title": "CaseDetailResponse"
       },
@@ -3021,6 +3715,11 @@
           "event_type": {
             "type": "string",
             "title": "Event Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
           },
           "from_status": {
             "anyOf": [
@@ -3160,6 +3859,28 @@
             "title": "Phase",
             "default": ""
           },
+          "track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track"
+          },
+          "track_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Label"
+          },
           "lat": {
             "type": "number",
             "title": "Lat"
@@ -3220,6 +3941,98 @@
             ],
             "title": "Public Summary"
           },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "emic_case_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Case No"
+          },
+          "emic_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Status"
+          },
+          "emic_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Channel"
+          },
+          "emic_reported_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Reported At"
+          },
+          "emic_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Synced At"
+          },
+          "community_submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Submitted At"
+          },
           "threshold_reached_at": {
             "anyOf": [
               {
@@ -3231,18 +4044,6 @@
               }
             ],
             "title": "Threshold Reached At"
-          },
-          "dispatched_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dispatched At"
           },
           "resolved_at": {
             "anyOf": [
@@ -3336,34 +4137,6 @@
         ],
         "title": "CaseListResponse"
       },
-      "CategorySuggestion": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "default_severity": {
-            "type": "string",
-            "title": "Default Severity"
-          },
-          "recommended": {
-            "type": "boolean",
-            "title": "Recommended"
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "label",
-          "default_severity",
-          "recommended"
-        ],
-        "title": "CategorySuggestion"
-      },
       "ClusterPolicyInput": {
         "properties": {
           "required_unique_reporters": {
@@ -3419,6 +4192,53 @@
         },
         "type": "object",
         "title": "ClusterPolicyInput"
+      },
+      "CommunityConfirmRequest": {
+        "properties": {
+          "approve": {
+            "type": "boolean",
+            "title": "Approve"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "approve"
+        ],
+        "title": "CommunityConfirmRequest"
+      },
+      "CommunitySubmitResponse": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/PublicCase"
+          },
+          "photos": {
+            "type": "integer",
+            "title": "Photos"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case",
+          "photos",
+          "message"
+        ],
+        "title": "CommunitySubmitResponse"
       },
       "ConnectorListResponse": {
         "properties": {
@@ -3570,6 +4390,14 @@
             "type": "integer",
             "title": "Cases Active"
           },
+          "cases_community": {
+            "type": "integer",
+            "title": "Cases Community"
+          },
+          "cases_community_submitted": {
+            "type": "integer",
+            "title": "Cases Community Submitted"
+          },
           "cases_done": {
             "type": "integer",
             "title": "Cases Done"
@@ -3648,18 +4476,12 @@
             "title": "Reports Rejected",
             "default": 0
           },
-          "median_dispatch_minutes": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Median Dispatch Minutes"
+          "reports_subscribed": {
+            "type": "integer",
+            "title": "Reports Subscribed",
+            "default": 0
           },
-          "median_resolve_minutes": {
+          "median_review_minutes": {
             "anyOf": [
               {
                 "type": "number"
@@ -3668,7 +4490,25 @@
                 "type": "null"
               }
             ],
-            "title": "Median Resolve Minutes"
+            "title": "Median Review Minutes"
+          },
+          "median_close_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Close Minutes"
+          },
+          "pending_by_severity": {
+            "items": {
+              "$ref": "#/components/schemas/CountByKey"
+            },
+            "type": "array",
+            "title": "Pending By Severity"
           },
           "by_reporter_role": {
             "items": {
@@ -3688,6 +4528,8 @@
           "cases_open",
           "cases_pending",
           "cases_active",
+          "cases_community",
+          "cases_community_submitted",
           "cases_done",
           "cases_high_risk",
           "reports_total",
@@ -3766,6 +4608,106 @@
         ],
         "title": "DomainListResponse"
       },
+      "EmicInfo": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "field_map": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Field Map"
+          },
+          "status_suggestions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Status Suggestions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "field_map",
+          "status_suggestions"
+        ],
+        "title": "EmicInfo"
+      },
+      "EmicUpdateRequest": {
+        "properties": {
+          "emic_case_no": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Case No"
+          },
+          "emic_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Status"
+          },
+          "assigned_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Unit"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note",
+            "description": "公開處理進度（選填）"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "emic_processing",
+                  "closed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "EmicUpdateRequest"
+      },
       "GeoFeature": {
         "properties": {
           "id": {
@@ -3785,7 +4727,8 @@
             "enum": [
               "Point",
               "Polygon",
-              "LineString"
+              "LineString",
+              "Raster"
             ],
             "title": "Type",
             "default": "Point"
@@ -3797,6 +4740,7 @@
             "description": "[lon, lat] for Point (GeoJSON order)"
           },
           "properties": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Properties"
           }
@@ -3824,13 +4768,17 @@
             "type": "integer",
             "title": "Cases Open"
           },
-          "cases_awaiting_dispatch": {
+          "cases_pending_review": {
             "type": "integer",
-            "title": "Cases Awaiting Dispatch"
+            "title": "Cases Pending Review"
           },
           "cases_active": {
             "type": "integer",
             "title": "Cases Active"
+          },
+          "cases_community": {
+            "type": "integer",
+            "title": "Cases Community"
           },
           "reports_last_24h": {
             "type": "integer",
@@ -3842,8 +4790,9 @@
           "platforms_total",
           "platforms_published",
           "cases_open",
-          "cases_awaiting_dispatch",
+          "cases_pending_review",
           "cases_active",
+          "cases_community",
           "reports_last_24h"
         ],
         "title": "GlobalOverviewResponse"
@@ -4005,70 +4954,42 @@
         ],
         "title": "LayerStatusResponse"
       },
-      "LayerSuggestion": {
+      "LineBindRequest": {
         "properties": {
-          "key": {
+          "group_id": {
             "type": "string",
-            "title": "Key"
-          },
-          "module_id": {
-            "type": "string",
-            "title": "Module Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "recommended": {
-            "type": "boolean",
-            "title": "Recommended"
-          },
-          "core": {
-            "type": "boolean",
-            "title": "Core"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          },
-          "live": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Live"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
+            "maxLength": 64,
+            "minLength": 10,
+            "title": "Group Id"
           }
         },
         "type": "object",
         "required": [
-          "key",
-          "module_id",
-          "name",
-          "description",
-          "recommended",
-          "core",
-          "reason"
+          "group_id"
         ],
-        "title": "LayerSuggestion"
+        "title": "LineBindRequest"
+      },
+      "LoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest"
       },
       "MapFeatureCollection": {
         "properties": {
@@ -4080,6 +5001,7 @@
           },
           "features": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -4113,6 +5035,7 @@
             "title": "Enabled"
           },
           "config": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Config"
           }
@@ -4229,6 +5152,7 @@
             "title": "Source"
           },
           "default_config": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Default Config"
           }
@@ -4250,64 +5174,6 @@
           "default_config"
         ],
         "title": "ModuleSpecItem"
-      },
-      "ModuleSuggestion": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "domain": {
-            "type": "string",
-            "title": "Domain"
-          },
-          "domain_label": {
-            "type": "string",
-            "title": "Domain Label"
-          },
-          "module_type": {
-            "type": "string",
-            "title": "Module Type"
-          },
-          "recommended": {
-            "type": "boolean",
-            "title": "Recommended"
-          },
-          "core": {
-            "type": "boolean",
-            "title": "Core"
-          },
-          "implemented": {
-            "type": "boolean",
-            "title": "Implemented"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "domain",
-          "domain_label",
-          "module_type",
-          "recommended",
-          "core",
-          "implemented",
-          "reason"
-        ],
-        "title": "ModuleSuggestion"
       },
       "NearbyCase": {
         "properties": {
@@ -4352,6 +5218,28 @@
           "distance_m"
         ],
         "title": "NearbyCase"
+      },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest"
       },
       "PhotoItem": {
         "properties": {
@@ -4460,6 +5348,7 @@
           "configuration": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -4478,7 +5367,8 @@
             "type": "string",
             "maxLength": 120,
             "minLength": 1,
-            "title": "Name"
+            "title": "Name",
+            "description": "災害名稱，例如「115 年 0903 豪雨」"
           },
           "brief": {
             "anyOf": [
@@ -4574,6 +5464,7 @@
           "configuration": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -4586,6 +5477,19 @@
             "type": "boolean",
             "title": "Publish",
             "default": true
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
           }
         },
         "type": "object",
@@ -4594,7 +5498,7 @@
           "hazards"
         ],
         "title": "PlatformCreate",
-        "description": "The human-approved plan. Everything is validated against the registry;\ncore modules and dependencies are always added."
+        "description": "A named disaster. Everything is validated against the registry; core\nmodules and dependencies are always added. Modules / layers / categories\nleft out are derived from the hazard types."
       },
       "PlatformDetail": {
         "properties": {
@@ -4709,10 +5613,12 @@
             "title": "Brief"
           },
           "scenario": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Scenario"
           },
           "configuration": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Configuration"
           },
@@ -4730,6 +5636,11 @@
           "console_url": {
             "type": "string",
             "title": "Console Url"
+          },
+          "embed_url": {
+            "type": "string",
+            "title": "Embed Url",
+            "default": ""
           },
           "updated_at": {
             "type": "string",
@@ -4887,6 +5798,52 @@
         ],
         "title": "PlatformListResponse"
       },
+      "PlatformPreviewRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Name",
+            "default": ""
+          },
+          "hazards": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hazards",
+            "description": "未提供時依災害名稱建議"
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "County"
+          },
+          "towns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Towns"
+          }
+        },
+        "type": "object",
+        "title": "PlatformPreviewRequest"
+      },
       "PlatformStatusUpdate": {
         "properties": {
           "status": {
@@ -4940,6 +5897,28 @@
             "type": "string",
             "title": "Phase"
           },
+          "track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track"
+          },
+          "track_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Label"
+          },
           "lat": {
             "type": "number",
             "title": "Lat"
@@ -4989,6 +5968,17 @@
             ],
             "title": "Assigned Unit"
           },
+          "emic_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emic Status"
+          },
           "public_summary": {
             "anyOf": [
               {
@@ -5010,7 +6000,7 @@
             "format": "date-time",
             "title": "Updated At"
           },
-          "dispatched_at": {
+          "reviewed_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -5020,9 +6010,9 @@
                 "type": "null"
               }
             ],
-            "title": "Dispatched At"
+            "title": "Reviewed At"
           },
-          "resolved_at": {
+          "closed_at": {
             "anyOf": [
               {
                 "type": "string",
@@ -5032,7 +6022,7 @@
                 "type": "null"
               }
             ],
-            "title": "Resolved At"
+            "title": "Closed At"
           }
         },
         "type": "object",
@@ -5083,10 +6073,16 @@
           },
           "progress": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
             "title": "Progress"
+          },
+          "can_assist": {
+            "type": "boolean",
+            "title": "Can Assist",
+            "default": false
           }
         },
         "type": "object",
@@ -5307,7 +6303,26 @@
               }
             ],
             "title": "Reporter Contact",
-            "description": "PII，僅內部"
+            "description": "電話（選填）。PII，僅內部"
+          },
+          "reporter_email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 254
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Email",
+            "description": "Email（選填，接收進度通知用）。PII，僅內部"
+          },
+          "notify_opt_in": {
+            "type": "boolean",
+            "title": "Notify Opt In",
+            "description": "是否接收案件處理進度通知（需填 Email）",
+            "default": false
           },
           "client_key": {
             "anyOf": [
@@ -5399,6 +6414,11 @@
           "required_unique_reporters": {
             "type": "integer",
             "title": "Required Unique Reporters"
+          },
+          "notify_opt_in": {
+            "type": "boolean",
+            "title": "Notify Opt In",
+            "default": false
           },
           "message": {
             "type": "string",
@@ -5518,6 +6538,27 @@
               }
             ],
             "title": "Reporter Contact"
+          },
+          "reporter_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Email"
+          },
+          "pii_hidden": {
+            "type": "boolean",
+            "title": "Pii Hidden",
+            "default": false
+          },
+          "notify_opt_in": {
+            "type": "boolean",
+            "title": "Notify Opt In",
+            "default": false
           },
           "has_identity": {
             "type": "boolean",
@@ -5746,94 +6787,36 @@
         "title": "ReportPublic",
         "description": "No PII; coarse location; redacted text."
       },
-      "ScenarioAnalysis": {
+      "ReviewRequest": {
         "properties": {
-          "region": {
-            "$ref": "#/components/schemas/ScenarioRegion"
-          },
-          "hazards": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Hazards"
-          },
-          "hazard_labels": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Hazard Labels"
-          },
-          "impacts": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Impacts"
-          },
-          "impact_labels": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Impact Labels"
-          },
-          "reporter_roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Reporter Roles"
-          },
-          "data_needs": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Data Needs"
-          },
-          "summary": {
+          "decision": {
             "type": "string",
-            "title": "Summary"
-          }
-        },
-        "type": "object",
-        "required": [
-          "region",
-          "hazards",
-          "hazard_labels",
-          "impacts",
-          "impact_labels",
-          "reporter_roles",
-          "data_needs",
-          "summary"
-        ],
-        "title": "ScenarioAnalysis"
-      },
-      "ScenarioRegion": {
-        "properties": {
-          "county": {
+            "enum": [
+              "emic",
+              "community",
+              "dismiss"
+            ],
+            "title": "Decision",
+            "description": "上報 EMIC／民間可處理／不成案"
+          },
+          "note": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 500
               },
               {
                 "type": "null"
               }
             ],
-            "title": "County"
-          },
-          "towns": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Towns"
+            "title": "Note"
           }
         },
         "type": "object",
-        "title": "ScenarioRegion"
+        "required": [
+          "decision"
+        ],
+        "title": "ReviewRequest"
       },
       "SituationResponse": {
         "properties": {
@@ -5890,6 +6873,14 @@
           "cases_active": {
             "type": "integer",
             "title": "Cases Active"
+          },
+          "cases_community": {
+            "type": "integer",
+            "title": "Cases Community"
+          },
+          "cases_community_submitted": {
+            "type": "integer",
+            "title": "Cases Community Submitted"
           },
           "cases_done": {
             "type": "integer",
@@ -5965,6 +6956,8 @@
           "cases_open",
           "cases_pending",
           "cases_active",
+          "cases_community",
+          "cases_community_submitted",
           "cases_done",
           "cases_high_risk",
           "reports_total",
@@ -6005,18 +6998,6 @@
             "title": "Public",
             "description": "是否顯示在公開時間軸",
             "default": true
-          },
-          "actor_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actor Name"
           }
         },
         "type": "object",
@@ -6065,18 +7046,6 @@
             "type": "boolean",
             "title": "Public",
             "default": true
-          },
-          "actor_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actor Name"
           }
         },
         "type": "object",
@@ -6084,6 +7053,160 @@
           "note"
         ],
         "title": "UpdateRequest"
+      },
+      "UserCreateRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Username"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "display_name",
+          "role",
+          "password"
+        ],
+        "title": "UserCreateRequest"
+      },
+      "UserItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "role_label": {
+            "type": "string",
+            "title": "Role Label"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "locked": {
+            "type": "boolean",
+            "title": "Locked"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "role_label",
+          "active",
+          "locked",
+          "must_change_password",
+          "created_at"
+        ],
+        "title": "UserItem"
+      },
+      "UserUpdateRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password",
+            "description": "重設密碼（使用者下次登入須變更）"
+          }
+        },
+        "type": "object",
+        "title": "UserUpdateRequest"
       },
       "ValidationError": {
         "properties": {
@@ -6120,15 +7243,24 @@
       }
     },
     "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "POST /v1/auth/login 取得權杖。/v1/public、/v1/health 與 /v1/line/webhook 免登入。"
+      },
       "ApiKeyAuth": {
         "type": "apiKey",
         "in": "header",
         "name": "X-API-Key",
-        "description": "設定 ADMIN_API_KEY 後，/v1/public 與 /v1/health 以外的端點需帶此標頭。"
+        "description": "系統服務金鑰（ADMIN_API_KEY），供排程或整合程式使用。"
       }
     }
   },
   "security": [
+    {
+      "BearerAuth": []
+    },
     {
       "ApiKeyAuth": []
     }

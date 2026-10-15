@@ -1,16 +1,23 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.4
-pydantic-settings==2.7.1
-sqlalchemy==2.0.36
-alembic==1.14.0
-psycopg[binary]==3.2.3
-pytest==8.3.4
+# starlette >= 0.47.2 (via fastapi) fixes GHSA-2c2j-9gv5-cj73 on multipart uploads
+fastapi==0.120.4
+starlette>=0.47.2,<0.51
+uvicorn[standard]==0.38.0
+pydantic==2.12.4
+pydantic-settings==2.12.0
+sqlalchemy==2.0.44
+alembic==1.17.1
+psycopg[binary]==3.2.12
 httpx==0.28.1
 # shapefile parsing for ARDSWC debris-flow / landslide layers (pure python)
 pyshp>=2.3,<4
-# crop/downscale the CWA radar composite before serving it to browsers
+# crop/downscale the CWA radar composite; re-encode uploads to strip EXIF/GPS
 pillow>=10,<12
-openai>=1.40,<2
 # multipart form parsing for photo uploads
 python-multipart==0.0.20
+# CAP alert feeds are parsed with the hardened XML parser (entity expansion)
+defusedxml>=0.7,<0.8
+# staff accounts: Argon2id password hashing and signed login tokens
+argon2-cffi>=23,<26
+PyJWT>=2.8,<3
+# encrypt reporters' contact details at rest (AES-GCM)
+cryptography>=42,<46

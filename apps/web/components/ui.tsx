@@ -5,16 +5,17 @@
 import Link from "next/link";
 import CountUp from "@/components/CountUp";
 import Spark from "@/components/Spark";
-import { PHASE_COLOR, PHASE_LABEL, PHASE_OF, SEVERITY_COLOR, SEVERITY_LABEL, STATUS_LABEL } from "@/lib/labels";
+import { CONSOLE_STATUS_LABEL, PHASE_COLOR, PHASE_LABEL, PHASE_OF, SEVERITY_COLOR, SEVERITY_LABEL, STATUS_LABEL } from "@/lib/labels";
 import type { CaseStatus, Phase, Severity } from "@/lib/types";
 
-export function StatusPill({ status, phase }: { status: CaseStatus | string; phase?: Phase }) {
+export function StatusPill({ status, phase, console: forConsole = false }: { status: CaseStatus | string; phase?: Phase; console?: boolean }) {
   const ph = phase || PHASE_OF[status as CaseStatus] || "pending";
   const color = PHASE_COLOR[ph];
+  const labels = forConsole ? CONSOLE_STATUS_LABEL : STATUS_LABEL;
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium" style={{ color, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[13px] font-medium" style={{ color, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {STATUS_LABEL[status as CaseStatus] || status}
+      {labels[status as CaseStatus] || status}
     </span>
   );
 }
@@ -22,7 +23,7 @@ export function StatusPill({ status, phase }: { status: CaseStatus | string; pha
 export function PhasePill({ phase }: { phase: Phase }) {
   const color = PHASE_COLOR[phase];
   return (
-    <span className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium" style={{ color, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
+    <span className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[13px] font-medium" style={{ color, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {PHASE_LABEL[phase]}
     </span>
@@ -31,7 +32,7 @@ export function PhasePill({ phase }: { phase: Phase }) {
 
 export function SeverityTag({ severity, withLabel = true }: { severity: Severity; withLabel?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-[var(--ink-2)]">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[13px] font-medium text-[var(--ink-2)]">
       <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SEVERITY_COLOR[severity] }} />
       {withLabel ? `嚴重度 ${SEVERITY_LABEL[severity]}` : SEVERITY_LABEL[severity]}
     </span>
@@ -51,7 +52,7 @@ export function Kpi({ value, label, tone, hint, small, spark }: { value: number 
         {spark && spark.length ? <Spark values={spark} width={72} height={22} color={accent || "var(--brand)"} className="flex-none opacity-80" /> : null}
       </div>
       <div className="af-kpi-label">{label}</div>
-      {hint ? <div className="mt-0.5 text-[11px] text-[var(--faint)]">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-[13px] text-[var(--faint)]">{hint}</div> : null}
     </div>
   );
 }

@@ -1,11 +1,11 @@
-"""Deterministic platform composer.
+"""Deterministic platform composer (G-10 災害平台建立).
 
-Given a human-approved selection (hazards, region, modules, layers, cluster
-policy) this builds the Platform row and its PlatformModuleConfig rows. It
-validates everything against the module registry, always includes the core
-modules and pulls in declared dependencies, so a platform can never be
-generated in a non-functional shape — regardless of what the planner (or a
-human) asked for.
+An administrator names the disaster (「115 年 0903 豪雨」) and picks its hazard
+types and region; this builds the Platform row and its PlatformModuleConfig
+rows. It validates everything against the module registry, always includes the
+core modules and pulls in declared dependencies, so a platform can never be
+generated in a non-functional shape. No model is involved: hazard types are
+suggested from the name by keyword rules and confirmed by a person.
 """
 from __future__ import annotations
 
@@ -17,12 +17,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import Platform, PlatformModuleConfig
-from app.domain.hazards import HAZARDS, hazard_label
+from app.domain.categories import CATEGORIES
+from app.domain.hazards import HAZARDS, detect_hazards, hazard_label
 from app.modules import ModuleNotFoundError, registry
 from app.modules.scenarios import compose_profile
 from app.services import outbox_service
 from app.services.cluster_service import policy_from_dict
-from app.utils.geo import TAIWAN_CENTER, TOWN_CENTROIDS, centroid_for, mean_point, normalize_admin
+from app.utils.geo import TAIWAN_CENTER, TOWN_CENTROIDS, centroid_for, mean_point
 from app.utils.slug import short_suffix, slugify
 
 
@@ -112,7 +113,7 @@ def create_platform(
     cluster_policy: dict | None = None,
     configuration: dict | None = None,
     publish: bool = False,
-    source: str = "agent",
+    source: str = "console",
     slug: str | None = None,
 ) -> Platform:
     hz = [h for h in hazards if h in HAZARDS]
@@ -125,8 +126,6 @@ def create_platform(
     scenario = profile.to_dict()
     if report_categories:
         # human-approved category list wins, but only known categories
-        from app.domain.categories import CATEGORIES
-
         keys = [c for c in report_categories if c in CATEGORIES]
         if keys:
             if "other" not in keys:
@@ -203,6 +202,31 @@ def create_platform(
     db.commit()
     db.refresh(platform)
     return platform
+
+
+def preview(*, name: str, hazards: list[str] | None, county: str | None, towns: list[str]) -> dict:
+    """What a platform for this disaster would contain — before anything is
+    written. Hazards not given are suggested from the disaster name."""
+    detected = detect_hazards(name or "")
+    chosen = [h for h in (hazards if hazards is not None else detected) if h in HAZARDS]
+    profile = compose_profile(chosen, county, towns)
+    return {
+        "detected_hazards": detected,
+        "hazards": chosen,
+        "hazard_labels": [hazard_label(h) for h in chosen],
+        "report_categories": list(profile.report_categories),
+        "layers": list(profile.layers),
+        "modules": list(profile.modules),
+        "suggested_name": name.strip() if name and name.strip() else "",
+    }
+
+
+def hazard_options() -> list[dict]:
+    return [{"key": h.key, "label": h.label} for h in HAZARDS.values()]
+
+
+def region_options() -> list[dict]:
+    return [{"county": c, "towns": sorted(t.keys())} for c, t in TOWN_CENTROIDS.items()]
 
 
 def set_status(db: Session, platform: Platform, status: str) -> Platform:
@@ -307,13 +331,6 @@ def public_config(platform: Platform) -> dict:
         "modules": platform.modules or [],
         "layers": platform.layers or [],
         "map": cfg.get("map", {"center": [platform.center_lat, platform.center_lon], "zoom": 10}),
-        # township reference points (town-hall area) — used by the portal for
-        # labels and as the *indicative* origin of non-fire dispatch arcs
-        "town_centers": {
-            t: {"lat": ll[0], "lon": ll[1]}
-            for t, ll in TOWN_CENTROIDS.get(normalize_admin(platform.county), {}).items()
-            if not platform.towns or t in platform.towns
-        },
         "cluster_policy": {
             # the rule itself is public information (transparency), not PII
             "required_unique_reporters": (cfg.get("cluster_policy") or {}).get("required_unique_reporters"),
@@ -329,7 +346,7 @@ def public_config(platform: Platform) -> dict:
     }
 
 
-def prune_generated(db: Session, *, keep: int | None = None) -> list[str]:
+def prune_generated(db: Session, *, keep: int | None = None, protect: set[uuid.UUID] | None = None) -> list[str]:
     """Keep the workspace clean between demonstrations.
 
     Everything the generator produced is disposable: only the newest ``keep``
@@ -342,7 +359,10 @@ def prune_generated(db: Session, *, keep: int | None = None) -> list[str]:
     if limit < 0:
         return []
     rows = list(db.scalars(select(Platform).order_by(Platform.created_at.desc())).all())
-    disposable = [p for p in rows if not (p.configuration or {}).get("demo_key")]
+    # ``protect``: the platform a request just created is never retired by that
+    # same request, whatever the database clock says about creation order
+    disposable = [p for p in rows if not (p.configuration or {}).get("demo_key") and p.id not in (protect or set())]
+    limit = max(0, limit - len(protect or ()))
     removed: list[str] = []
     for p in disposable[limit:]:
         removed.append(p.slug)

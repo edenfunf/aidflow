@@ -1,20 +1,16 @@
 // API client. Base URL from NEXT_PUBLIC_API_BASE_URL, falling back to
 // api.<same-domain> on deployed hosts and localhost:8000 in development.
-// Console calls attach X-API-Key from localStorage when the operator set one.
+// Console calls carry the staff login token (sessionStorage); a 401 on a
+// console call clears it and sends the operator to /login.
 
 import type {
-  AgentExecuteResponse,
-  AgentPlan,
   AuditEvent,
+  CaseActionResponse,
   CaseDetail,
   CaseItem,
   CaseStatus,
   ClusterRow,
-  DispatchResponse,
-  ResponderSuggestion,
-  ResponderUnit,
-  RouteCollection,
-  VehicleListResponse,
+  CommunitySubmitResponse,
   ConnectorStatusItem,
   ConsoleOverview,
   DomainItem,
@@ -22,20 +18,29 @@ import type {
   HealthResponse,
   LayerResponse,
   LayerStatusItem,
+  LineStatus,
+  LoginResponse,
   MapFeatureCollection,
+  Me,
   ModuleSpecItem,
+  NotificationLogItem,
   PhotoItem,
   PlatformDetail,
   PlatformDraft,
   PlatformItem,
+  PlatformOptions,
+  PlatformPreview,
   PublicCase,
   PublicCaseDetail,
   PublicPlatform,
   ReportInternal,
   ReportPublic,
+  ReviewDecision,
+  Role,
   Situation,
   SubmitReportPayload,
   SubmitReportResponse,
+  UserItem,
 } from "./types";
 
 function resolveApiBase(): string {
@@ -51,21 +56,23 @@ function resolveApiBase(): string {
 
 export const API_BASE = resolveApiBase().replace(/\/$/, "");
 
-const API_KEY_STORAGE = "aidflow.apiKey";
+// ── session token ──────────────────────────────────────────────────────
+// sessionStorage: a closed browser tab ends the session on a shared EOC PC
+const TOKEN_STORAGE = "aidflow.session";
 
-export function getApiKey(): string {
+export function getToken(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.localStorage.getItem(API_KEY_STORAGE) || "";
+    return window.sessionStorage.getItem(TOKEN_STORAGE) || "";
   } catch {
     return "";
   }
 }
 
-export function setApiKey(value: string): void {
+export function setToken(value: string): void {
   try {
-    if (value) window.localStorage.setItem(API_KEY_STORAGE, value);
-    else window.localStorage.removeItem(API_KEY_STORAGE);
+    if (value) window.sessionStorage.setItem(TOKEN_STORAGE, value);
+    else window.sessionStorage.removeItem(TOKEN_STORAGE);
   } catch {
     /* storage unavailable */
   }
@@ -81,11 +88,22 @@ export class ApiError extends Error {
   }
 }
 
+function isPublicPath(path: string): boolean {
+  return path.startsWith("/v1/public") || path === "/v1/auth/login";
+}
+
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  const here = window.location.pathname + window.location.search;
+  if (window.location.pathname.startsWith("/login")) return;
+  window.location.assign(`/login?next=${encodeURIComponent(here)}`);
+}
+
 async function request<T>(path: string, init?: RequestInit & { rawBody?: boolean }): Promise<T> {
   const headers: Record<string, string> = { ...((init?.headers as Record<string, string>) || {}) };
   if (init?.body && !init.rawBody && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  const key = getApiKey();
-  if (key && !path.startsWith("/v1/public")) headers["X-API-Key"] = key;
+  const token = getToken();
+  if (token && !path.startsWith("/v1/public")) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -106,6 +124,10 @@ async function request<T>(path: string, init?: RequestInit & { rawBody?: boolean
     } catch {
       /* non-JSON error */
     }
+    if (res.status === 401 && !isPublicPath(path)) {
+      setToken("");
+      redirectToLogin();
+    }
     throw new ApiError(res.status, message, detail);
   }
   if (res.status === 204) return undefined as T;
@@ -121,26 +143,36 @@ function qs(params: Record<string, string | number | boolean | undefined | null>
   return s ? `?${s}` : "";
 }
 
-/** Seconds since this page was loaded.
- *
- *  A demo platform is seeded once and then sits there; by the afternoon every
- *  simulated vehicle would have long since parked at its incident, leaving
- *  nothing moving on the map. The vehicle endpoints take this as `elapsed` so
- *  the convoy sets off from its station on every fresh load. Captured at
- *  module scope, so a full page load resets it while client-side navigation
- *  between pages keeps one continuous journey.
- *
- *  Live AVL positions and real platforms ignore it entirely.
- */
-const SESSION_START = Date.now();
-
-function sessionSeconds(): number {
-  return Math.max(0, Math.round((Date.now() - SESSION_START) / 1000));
-}
+type CaseQuery = {
+  phase?: string;
+  status?: string;
+  track?: string;
+  category?: string;
+  town?: string;
+  severity?: string;
+  since_hours?: number;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+};
 
 export const api = {
   health: () => request<HealthResponse>("/v1/health"),
   overview: () => request<GlobalOverview>("/v1/overview"),
+
+  // ── auth ──
+  login: (username: string, password: string) =>
+    request<LoginResponse>("/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  me: () => request<Me>("/v1/auth/me"),
+  logout: () => request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ token: string; expires_at: string }>("/v1/auth/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+  listUsers: () => request<UserItem[]>("/v1/users"),
+  createUser: (body: { username: string; display_name: string; role: Role; password: string }) =>
+    request<UserItem>("/v1/users", { method: "POST", body: JSON.stringify(body) }),
+  updateUser: (id: string, body: { display_name?: string; role?: Role; active?: boolean; password?: string }) =>
+    request<UserItem>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  securityAudit: (params: { kind?: string; limit?: number } = {}) => request<{ items: AuditEvent[] }>(`/v1/admin/audit${qs(params)}`),
 
   // ── public portal ──
   publicPlatforms: () => request<{ items: PublicPlatform[]; total: number }>("/v1/public/platforms"),
@@ -148,20 +180,8 @@ export const api = {
   situation: (slug: string) => request<Situation>(`/v1/public/platforms/${encodeURIComponent(slug)}/situation`),
   publicMap: (slug: string, params: { since_hours?: number; include_reports?: boolean } = {}) =>
     request<MapFeatureCollection>(`/v1/public/platforms/${encodeURIComponent(slug)}/map${qs(params)}`),
-  publicCases: (
-    slug: string,
-    params: {
-      phase?: string;
-      status?: string;
-      category?: string;
-      town?: string;
-      severity?: string;
-      since_hours?: number;
-      sort?: string;
-      limit?: number;
-      offset?: number;
-    } = {}
-  ) => request<{ items: PublicCase[]; total: number }>(`/v1/public/platforms/${encodeURIComponent(slug)}/cases${qs(params)}`),
+  publicCases: (slug: string, params: CaseQuery = {}) =>
+    request<{ items: PublicCase[]; total: number }>(`/v1/public/platforms/${encodeURIComponent(slug)}/cases${qs(params)}`),
   publicCase: (slug: string, caseId: string) =>
     request<PublicCaseDetail>(`/v1/public/platforms/${encodeURIComponent(slug)}/cases/${caseId}`),
   publicReports: (slug: string, params: { limit?: number; category?: string; town?: string } = {}) =>
@@ -177,25 +197,32 @@ export const api = {
     if (caption) form.append("caption", caption);
     return request<PhotoItem>(`/v1/public/reports/${reportId}/photos`, { method: "POST", body: form, rawBody: true });
   },
+  submitCommunityReport: (slug: string, caseId: string, body: { files: File[]; note?: string; helper_name?: string }) => {
+    const form = new FormData();
+    body.files.forEach((f) => form.append("files", f));
+    if (body.note) form.append("note", body.note);
+    if (body.helper_name) form.append("helper_name", body.helper_name);
+    return request<CommunitySubmitResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/cases/${caseId}/community-report`, {
+      method: "POST",
+      body: form,
+      rawBody: true,
+    });
+  },
+  unsubscribe: (token: string) => request<{ ok: boolean; message: string }>(`/v1/public/unsubscribe${qs({ token })}`, { method: "POST" }),
   publicLayerStatuses: (slug: string) =>
     request<{ items: LayerStatusItem[] }>(`/v1/public/platforms/${encodeURIComponent(slug)}/layers`),
   publicLayer: (slug: string, layer: string) =>
     request<LayerResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/layers/${layer}`),
   mediaUrl: (path: string) => `${API_BASE}${path}`,
-  publicVehicles: (slug: string) =>
-    request<VehicleListResponse>(`/v1/public/platforms/${encodeURIComponent(slug)}/vehicles?elapsed=${sessionSeconds()}`),
-  publicRoutes: (slug: string) => request<RouteCollection>(`/v1/public/platforms/${encodeURIComponent(slug)}/routes`),
 
-  // ── agent ──
-  agentPlan: (message: string) =>
-    request<AgentPlan>("/v1/agent/plan", { method: "POST", body: JSON.stringify({ message }) }),
-  agentExecute: (draft: PlatformDraft) =>
-    request<AgentExecuteResponse>("/v1/agent/execute", { method: "POST", body: JSON.stringify(draft) }),
-
-  // ── console ──
+  // ── platforms ──
   listPlatforms: (params: { status?: string } = {}) =>
     request<{ items: PlatformItem[]; total: number }>(`/v1/platforms${qs(params)}`),
   getPlatform: (id: string) => request<PlatformDetail>(`/v1/platforms/${id}`),
+  platformOptions: () => request<PlatformOptions>("/v1/platforms/options"),
+  previewPlatform: (body: { name: string; hazards?: string[] | null; county?: string | null; towns?: string[] }) =>
+    request<PlatformPreview>("/v1/platforms/preview", { method: "POST", body: JSON.stringify(body) }),
+  createPlatform: (draft: PlatformDraft) => request<PlatformDetail>("/v1/platforms", { method: "POST", body: JSON.stringify(draft) }),
   setPlatformStatus: (id: string, status: string) =>
     request<PlatformDetail>(`/v1/platforms/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
   updatePlatform: (id: string, body: { name?: string; cluster_policy?: Record<string, number | boolean> }) =>
@@ -203,45 +230,35 @@ export const api = {
   consoleOverview: (id: string) => request<ConsoleOverview>(`/v1/platforms/${id}/overview`),
   consoleMap: (id: string, params: { since_hours?: number; include_reports?: boolean } = {}) =>
     request<MapFeatureCollection>(`/v1/platforms/${id}/map${qs(params)}`),
-  consoleCases: (
-    id: string,
-    params: {
-      phase?: string;
-      status?: string;
-      category?: string;
-      town?: string;
-      severity?: string;
-      since_hours?: number;
-      sort?: string;
-      limit?: number;
-      offset?: number;
-    } = {}
-  ) => request<{ items: CaseItem[]; total: number }>(`/v1/platforms/${id}/cases${qs(params)}`),
+  consoleCases: (id: string, params: CaseQuery = {}) => request<{ items: CaseItem[]; total: number }>(`/v1/platforms/${id}/cases${qs(params)}`),
   consoleReports: (id: string, params: { category?: string; town?: string; status?: string; limit?: number } = {}) =>
     request<{ items: ReportInternal[]; total: number }>(`/v1/platforms/${id}/reports${qs(params)}`),
   consoleClusters: (id: string, params: { status?: string } = {}) =>
     request<{ items: ClusterRow[]; total: number }>(`/v1/platforms/${id}/clusters${qs(params)}`),
-  promoteCluster: (id: string, clusterId: string, actorName?: string) =>
-    request<CaseItem>(`/v1/platforms/${id}/clusters/${clusterId}/promote${qs({ actor_name: actorName })}`, { method: "POST" }),
+  promoteCluster: (id: string, clusterId: string) =>
+    request<CaseItem>(`/v1/platforms/${id}/clusters/${clusterId}/promote`, { method: "POST" }),
   consoleLayerStatuses: (id: string) => request<{ items: LayerStatusItem[] }>(`/v1/platforms/${id}/layers`),
   consoleLayer: (id: string, layer: string) => request<LayerResponse>(`/v1/platforms/${id}/layers/${layer}`),
   audit: (id: string, limit = 200) => request<{ items: AuditEvent[] }>(`/v1/platforms/${id}/audit${qs({ limit })}`),
-  consoleVehicles: (id: string) => request<VehicleListResponse>(`/v1/platforms/${id}/vehicles?elapsed=${sessionSeconds()}`),
-  consoleRoutes: (id: string) => request<RouteCollection>(`/v1/platforms/${id}/routes`),
-  consoleUnits: (id: string) => request<{ items: ResponderUnit[]; total: number }>(`/v1/platforms/${id}/units`),
-  caseResponders: (caseId: string) => request<{ case_id: string; category: string; items: ResponderSuggestion[] }>(`/v1/cases/${caseId}/responders`),
-  dispatchCase: (caseId: string, body: { unit_id: string; note?: string; actor_name?: string; notify?: boolean }) =>
-    request<DispatchResponse>(`/v1/cases/${caseId}/dispatch`, { method: "POST", body: JSON.stringify(body) }),
+  lineStatus: (id: string) => request<LineStatus>(`/v1/platforms/${id}/line`),
+  lineRegenerateCode: (id: string) => request<LineStatus>(`/v1/platforms/${id}/line/code`, { method: "POST" }),
+  lineBind: (id: string, group_id: string) => request<LineStatus>(`/v1/platforms/${id}/line`, { method: "PUT", body: JSON.stringify({ group_id }) }),
+  lineUnbind: (id: string) => request<LineStatus>(`/v1/platforms/${id}/line`, { method: "DELETE" }),
+  lineTest: (id: string) => request<{ result: string }>(`/v1/platforms/${id}/line/test`, { method: "POST" }),
+  notifications: (id: string, limit = 50) => request<{ items: NotificationLogItem[] }>(`/v1/platforms/${id}/notifications${qs({ limit })}`),
 
+  // ── cases ──
   getCase: (caseId: string) => request<CaseDetail>(`/v1/cases/${caseId}`),
-  transitionCase: (caseId: string, body: { status: CaseStatus; note?: string; public?: boolean; actor_name?: string }) =>
-    request<{ case: CaseItem }>(`/v1/cases/${caseId}/transition`, { method: "POST", body: JSON.stringify(body) }),
-  assignCase: (
-    caseId: string,
-    body: { unit_name: string; team_lead?: string; contact?: string; note?: string; actor_name?: string }
-  ) => request<{ case: CaseItem }>(`/v1/cases/${caseId}/assign`, { method: "POST", body: JSON.stringify(body) }),
-  addCaseUpdate: (caseId: string, body: { note: string; public: boolean; actor_name?: string }) =>
-    request<{ case: CaseItem }>(`/v1/cases/${caseId}/updates`, { method: "POST", body: JSON.stringify(body) }),
+  reviewCase: (caseId: string, body: { decision: ReviewDecision; note?: string }) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/review`, { method: "POST", body: JSON.stringify(body) }),
+  updateEmic: (caseId: string, body: { emic_case_no?: string; emic_status?: string; assigned_unit?: string; note?: string; status?: "emic_processing" | "closed" }) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/emic`, { method: "POST", body: JSON.stringify(body) }),
+  confirmCommunity: (caseId: string, body: { approve: boolean; note?: string }) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/community/confirm`, { method: "POST", body: JSON.stringify(body) }),
+  transitionCase: (caseId: string, body: { status: CaseStatus; note?: string; public?: boolean }) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/transition`, { method: "POST", body: JSON.stringify(body) }),
+  addCaseUpdate: (caseId: string, body: { note: string; public: boolean }) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/updates`, { method: "POST", body: JSON.stringify(body) }),
   uploadCasePhoto: (caseId: string, file: File, kind: "before" | "scene" | "after", caption?: string) => {
     const form = new FormData();
     form.append("file", file);

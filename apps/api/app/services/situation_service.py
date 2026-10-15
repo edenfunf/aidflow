@@ -13,13 +13,18 @@ from sqlalchemy.orm import Session
 
 from app.db.models import CaseEvent, IncidentCase, Platform, Report, ReportCluster
 from app.domain.case_states import (
-    ACTIVE_STATUSES,
+    COMMUNITY_STATUSES,
     DONE_STATUSES,
+    EMIC_STATUSES,
     PENDING_STATUSES,
     CaseStatus,
     phase_of,
     public_label,
 )
+
+_SEVERITY_LABELS = {"critical": "極高", "high": "高", "medium": "中", "low": "低"}
+_SEVERITY_ORDER = ["critical", "high", "medium", "low"]
+_CLOSED = (CaseStatus.closed.value, CaseStatus.dismissed.value)
 from app.domain.categories import REPORTER_ROLES, category_label, layer_for
 from app.services import privacy_service
 
@@ -67,7 +72,7 @@ def trend_buckets(db: Session, platform_id: uuid.UUID, *, hours: int = 24) -> li
         b = bucket_of(ts)
         if b:
             buckets[b]["cases_created"] += 1
-    for (ts,) in db.execute(select(IncidentCase.resolved_at).where(IncidentCase.platform_id == platform_id, IncidentCase.resolved_at >= start)).all():
+    for (ts,) in db.execute(select(IncidentCase.closed_at).where(IncidentCase.platform_id == platform_id, IncidentCase.closed_at >= start)).all():
         b = bucket_of(ts)
         if b:
             buckets[b]["cases_resolved"] += 1
@@ -91,13 +96,14 @@ def situation(db: Session, platform: Platform) -> dict:
     now = _now()
     status_counts = _group(db, IncidentCase.status, IncidentCase.platform_id == pid)
     pending = sum(status_counts.get(s.value, 0) for s in PENDING_STATUSES)
-    active = sum(status_counts.get(s.value, 0) for s in ACTIVE_STATUSES)
+    active = sum(status_counts.get(s.value, 0) for s in EMIC_STATUSES)
+    community = sum(status_counts.get(s.value, 0) for s in COMMUNITY_STATUSES)
     done = sum(status_counts.get(s.value, 0) for s in DONE_STATUSES)
     dismissed = status_counts.get(CaseStatus.dismissed.value, 0)
     total = sum(status_counts.values())
     high_risk = _count(
         db, IncidentCase, IncidentCase.platform_id == pid, IncidentCase.severity.in_(("high", "critical")),
-        IncidentCase.status.not_in((CaseStatus.closed.value, CaseStatus.dismissed.value, CaseStatus.resolved.value)),
+        IncidentCase.status.not_in(_CLOSED),
     )
     open_cases = total - done - dismissed
     cat_counts = _group(db, IncidentCase.category, IncidentCase.platform_id == pid,
@@ -120,6 +126,8 @@ def situation(db: Session, platform: Platform) -> dict:
         "cases_open": open_cases,
         "cases_pending": pending,
         "cases_active": active,
+        "cases_community": community,
+        "cases_community_submitted": status_counts.get(CaseStatus.community_submitted.value, 0),
         "cases_done": done,
         "cases_high_risk": high_risk,
         "reports_total": _count(db, Report, Report.platform_id == pid, Report.status != "rejected"),
@@ -130,29 +138,36 @@ def situation(db: Session, platform: Platform) -> dict:
         "by_category": _ordered(cat_counts, category_label),
         "by_town": _ordered(town_counts, lambda k: k),
         "by_status": _ordered(status_counts, public_label, [s.value for s in CaseStatus]),
-        "by_severity": _ordered(sev_counts, {"critical": "極高", "high": "高", "medium": "中", "low": "低"}.get,
-                                ["critical", "high", "medium", "low"]),
+        "by_severity": _severity_tiers(sev_counts),
         "trend": buckets,
     }
+
+
+def _severity_tiers(counts: dict[str, int]) -> list[dict]:
+    """All four tiers, always in order — a tier with no open cases shows 0."""
+    return [{"key": k, "label": _SEVERITY_LABELS[k], "count": counts.get(k, 0)} for k in _SEVERITY_ORDER]
 
 
 def console_overview(db: Session, platform: Platform) -> dict:
     base = situation(db, platform)
     pid = platform.id
     now = _now()
-    dispatch_minutes = []
-    resolve_minutes = []
+    review_minutes = []
+    close_minutes = []
     rows = db.execute(
-        select(IncidentCase.created_at, IncidentCase.dispatched_at, IncidentCase.resolved_at)
+        select(IncidentCase.created_at, IncidentCase.reviewed_at, IncidentCase.closed_at)
         .where(IncidentCase.platform_id == pid)
     ).all()
-    for created, dispatched, resolved in rows:
-        if created and dispatched:
-            dispatch_minutes.append((dispatched - created).total_seconds() / 60)
-        if created and resolved:
-            resolve_minutes.append((resolved - created).total_seconds() / 60)
+    for created, reviewed, closed in rows:
+        if created and reviewed:
+            review_minutes.append(max(0.0, (reviewed - created).total_seconds() / 60))
+        if created and closed:
+            close_minutes.append(max(0.0, (closed - created).total_seconds() / 60))
     role_counts = _group(db, Report.reporter_role, Report.platform_id == pid)
     role_labels = dict(REPORTER_ROLES)
+    # severity tiers of what still waits for review (審核點 sorted by severity)
+    pending_sev = _group(db, IncidentCase.severity, IncidentCase.platform_id == pid,
+                         IncidentCase.status == CaseStatus.pending_review.value)
     return {
         **base,
         "cases_new_last_hour": _count(db, IncidentCase, IncidentCase.platform_id == pid,
@@ -160,8 +175,10 @@ def console_overview(db: Session, platform: Platform) -> dict:
         "reports_unclustered": _count(db, Report, Report.platform_id == pid, Report.cluster_id.is_(None),
                                       Report.status != "rejected"),
         "reports_rejected": _count(db, Report, Report.platform_id == pid, Report.status == "rejected"),
-        "median_dispatch_minutes": round(median(dispatch_minutes), 1) if dispatch_minutes else None,
-        "median_resolve_minutes": round(median(resolve_minutes), 1) if resolve_minutes else None,
+        "reports_subscribed": _count(db, Report, Report.platform_id == pid, Report.notify_opt_in.is_(True)),
+        "median_review_minutes": round(median(review_minutes), 1) if review_minutes else None,
+        "median_close_minutes": round(median(close_minutes), 1) if close_minutes else None,
+        "pending_by_severity": _severity_tiers(pending_sev),
         "by_reporter_role": _ordered(role_counts, lambda k: role_labels.get(k, k)),
     }
 
@@ -171,9 +188,10 @@ def global_overview(db: Session) -> dict:
     return {
         "platforms_total": _count(db, Platform),
         "platforms_published": _count(db, Platform, Platform.status == "published"),
-        "cases_open": _count(db, IncidentCase, IncidentCase.status.not_in((CaseStatus.closed.value, CaseStatus.dismissed.value))),
-        "cases_awaiting_dispatch": _count(db, IncidentCase, IncidentCase.status == CaseStatus.awaiting_dispatch.value),
-        "cases_active": _count(db, IncidentCase, IncidentCase.status.in_([s.value for s in ACTIVE_STATUSES])),
+        "cases_open": _count(db, IncidentCase, IncidentCase.status.not_in(_CLOSED)),
+        "cases_pending_review": _count(db, IncidentCase, IncidentCase.status == CaseStatus.pending_review.value),
+        "cases_active": _count(db, IncidentCase, IncidentCase.status.in_([s.value for s in EMIC_STATUSES])),
+        "cases_community": _count(db, IncidentCase, IncidentCase.status.in_([s.value for s in COMMUNITY_STATUSES])),
         "reports_last_24h": _count(db, Report, Report.created_at >= now - timedelta(hours=24)),
     }
 
@@ -197,6 +215,8 @@ def case_feature(case: IncidentCase, *, public: bool) -> dict:
             "status": case.status,
             "status_label": public_label(case.status),
             "phase": phase_of(case.status),
+            "track": case.track,
+            "emic_status": case.emic_status,
             "town": case.town,
             "location_label": case.location_label,
             "report_count": case.report_count,
@@ -264,11 +284,14 @@ def map_collection(
     since: datetime | None = None,
     include_reports: bool = True,
 ) -> dict:
+    """The situation map. The public variant shows only what is still live:
+    closed and dismissed cases — and the reports that formed them — are
+    removed from the map (已結案災情自地圖撤除)."""
     pid = platform.id
     feats: list[dict] = []
     cq = select(IncidentCase).where(IncidentCase.platform_id == pid)
     if public:
-        cq = cq.where(IncidentCase.status != CaseStatus.dismissed.value)
+        cq = cq.where(IncidentCase.status.not_in(_CLOSED))
     if since is not None:
         cq = cq.where(IncidentCase.created_at >= since)
     for case in db.scalars(cq.order_by(IncidentCase.created_at.desc()).limit(2000)).all():
@@ -280,6 +303,9 @@ def map_collection(
         feats.append(cluster_feature(cluster, public=public))
     if include_reports:
         rq = select(Report).where(Report.platform_id == pid, Report.lat.is_not(None), Report.status != "rejected")
+        if public:
+            finished = select(IncidentCase.id).where(IncidentCase.platform_id == pid, IncidentCase.status.in_(_CLOSED))
+            rq = rq.where((Report.case_id.is_(None)) | (Report.case_id.not_in(finished)))
         if since is not None:
             rq = rq.where(Report.created_at >= since)
         for report in db.scalars(rq.order_by(Report.created_at.desc()).limit(5000)).all():

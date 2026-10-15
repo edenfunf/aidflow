@@ -1,8 +1,8 @@
 "use client";
 
-// Live event stream for the command centre: the transactional outbox read
-// back as a feed — cases forming, dispatches, arrivals, completions — with
-// new rows sliding in. Polls; nothing is invented client-side.
+// Live event stream for the console: the transactional outbox read back as a
+// feed — new reports, cases awaiting review, EMIC updates, community
+// completions — with new rows sliding in. Polls; nothing is invented.
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -14,24 +14,23 @@ import type { AuditEvent, CaseStatus } from "@/lib/types";
 
 const FEED_LABEL: Record<string, string> = {
   "report.received": "民眾回報",
-  "report.created": "民眾回報",
-  "cluster.opened": "新聚類（未達門檻）",
-  "case.threshold_reached": "達到成案門檻",
-  "case.created": "正式成案",
+  "report.created": "民眾通報",
+  "cluster.opened": "新通報地點（未達門檻）",
+  "case.threshold_reached": "達到多人回報門檻",
+  "case.created": "成案・待審核",
   "case.status_changed": "狀態更新",
-  "case.assignment_changed": "改派處理單位",
   "case.public_update": "處理進度",
-  "case.dispatch_notified": "已通報處理單位",
-  "dispatch.created": "通報並派遣",
-  "notification.sent": "通知已送出",
-  "notification.simulated": "模擬通知",
-  "notification.failed": "通知失敗",
+  "case.internal_note": "內部備註",
+  "case.emic_updated": "EMIC 資訊更新",
+  "case.emic_submitted": "已上報 EMIC",
+  "case.emic_submit_failed": "EMIC 自動上報失敗",
   "report.rejected": "回報排除",
   "photo.uploaded": "照片上傳",
   "platform.created": "平台建立",
+  "platform.created_by": "平台建立",
   "platform.configured": "平台設定",
-  "agent.planned": "情境分析",
-  "agent.executed": "平台生成",
+  "line.group_bound": "LINE 群組已綁定",
+  "line.group_unbound": "LINE 群組解除綁定",
 };
 
 function describe(e: AuditEvent): { label: string; detail: string; color: string; icon: string; caseId?: string } {
@@ -42,10 +41,7 @@ function describe(e: AuditEvent): { label: string; detail: string; color: string
   const caseNo = p.case_number ? `${p.case_number} ` : "";
   let color = "#475467";
   let detail = "";
-  if (e.event_type === "dispatch.created") {
-    detail = `${caseNo}→ ${p.unit_name || "處理單位"}${p.eta_minutes ? `，預計 ${p.eta_minutes} 分鐘抵達` : ""}`;
-    color = "#1d4ed8";
-  } else if (to && STATUS_LABEL[to as CaseStatus]) {
+  if (to && STATUS_LABEL[to as CaseStatus]) {
     detail = `${caseNo}${p.title || ""} → ${STATUS_LABEL[to as CaseStatus]}`;
     color = PHASE_HEX[PHASE_OF[to as CaseStatus]] || color;
   } else if (e.event_type === "case.created" || e.event_type === "case.threshold_reached") {
@@ -65,11 +61,11 @@ const EVENT_ICONS_MAP: Record<string, string> = {
   "case.status_changed": "status_changed",
   "case.assignment_changed": "assignment_changed",
   "case.public_update": "public_update",
-  "case.dispatch_notified": "dispatch_notified",
+  "case.emic_updated": "emic_updated",
+  "case.emic_submitted": "emic_submitted",
+  "case.emic_submit_failed": "emic_submit_failed",
   "cluster.opened": "threshold_reached",
   "report.created": "report.received",
-  "notification.sent": "dispatch_notified",
-  "notification.simulated": "dispatch_notified",
 };
 
 export default function EventFeed({ platformId, limit = 40, pollMs = 8000, className = "" }: { platformId: string; limit?: number; pollMs?: number; className?: string }) {
@@ -84,7 +80,7 @@ export default function EventFeed({ platformId, limit = 40, pollMs = 8000, class
         .audit(platformId, limit)
         .then((r) => {
           if (!alive) return;
-          const incoming = r.items.filter((e) => !e.event_type.startsWith("avl."));
+          const incoming = r.items;
           const newIds = incoming.filter((e) => !known.current.has(e.id)).map((e) => e.id);
           const first = known.current.size === 0;
           incoming.forEach((e) => known.current.add(e.id));
@@ -116,12 +112,12 @@ export default function EventFeed({ platformId, limit = 40, pollMs = 8000, class
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-[12px] font-medium text-[var(--ink)]">{d.label}</span>
-                <span className="flex-none font-mono text-[10.5px] tabular-nums text-[var(--faint)]" title={fmtAgo(e.created_at)}>
+                <span className="truncate text-[14px] font-medium text-[var(--ink)]">{d.label}</span>
+                <span className="flex-none font-mono text-[12.5px] tabular-nums text-[var(--faint)]" title={fmtAgo(e.created_at)}>
                   {fmtClock(e.created_at)}
                 </span>
               </span>
-              {d.detail ? <span className="block truncate text-[11px] text-[var(--ink-2)]">{d.detail}</span> : null}
+              {d.detail ? <span className="block truncate text-[13px] text-[var(--ink-2)]">{d.detail}</span> : null}
             </span>
           </>
         );

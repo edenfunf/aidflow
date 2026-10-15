@@ -2,7 +2,14 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.*
 .venv/
 venv/
 .pytest_cache/
 .mypy_cache/
+# never bake uploaded citizen photos or cached upstream files into the image
+media/
+# tests, docs and developer scripts are not part of the runtime
+tests/
+requirements-dev.txt
+*.md

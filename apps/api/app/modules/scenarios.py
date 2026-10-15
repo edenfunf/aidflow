@@ -1,7 +1,7 @@
 """Scenario profiles — compose hazards into one platform recipe.
 
 A ScenarioProfile is derived deterministically from the hazards (and region)
-the planner extracted from the brief. It decides which report categories the
+chosen for a named disaster. It decides which report categories the
 form shows, which map layers are relevant, and which modules are suggested.
 Adding a new disaster type is a new Hazard in domain/hazards.py, not new code
 here.
@@ -137,7 +137,6 @@ def compose_profile(
 _MODULE_REASONS: dict[str, str] = {
     "photo_upload": "現場照片是政府研判與公開透明的重要依據。",
     "reporter_role": "村里長、防災士與志工的回報需要被區分並加權。",
-    "case_assignment": "需指定處理單位與帶隊人員，便於追蹤與稽核。",
     "trend_visualization": "判斷災情是否惡化需要時間趨勢。",
     "moi_shelter_connector": "提供避難收容處所位置。",
     "cwa_connector": "官方雨量與天氣特報是豪雨／颱風情境的核心資料。",
@@ -153,14 +152,14 @@ _LAYER_REASONS: dict[str, str] = {
     "rainfall": "雨量是研判土石流與淹水的先行指標。",
     "water": "河川水位接近警戒值時需提前應變。",
     "shelter": "民眾需要知道最近的避難收容處所。",
-    "fire_station": "在地消防單位位置協助派工與民眾求援。",
+    "fire_station": "在地消防單位位置，供審核與民眾求援參考。",
     "official_alert": "官方警戒讓民眾以政府公告為準。",
     "radar": "雷達回波回放讓民眾與指揮中心看見雨帶正往哪個鄉鎮移動。",
     "debris_flow": "山區豪雨最切題的官方圖層：潛勢溪流與即時紅黃警戒。",
     "landslide_zone": "大規模崩塌潛勢區讓通報落點有官方潛勢依據。",
     "road_traffic": "路況 CCTV 與封閉消息把「民眾說路斷了」升級成官方佐證。",
     "reservoir": "水庫蓄水率與洩洪狀態影響下游鄉鎮的應變。",
-    "population": "鄉鎮人口讓派工順序能考慮受影響人數。",
+    "population": "鄉鎮人口讓審核排序能考慮受影響人數。",
     "power_outage": "計畫性停電公告避免把例行停電誤判為災情。",
     "building_damage": "建築損害與火災在此情境需獨立追蹤。",
     "lifeline": "停電停水影響範圍需要掌握。",

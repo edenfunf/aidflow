@@ -40,9 +40,9 @@ function useIntel(platformId: string, enabled: string[], active: boolean) {
 }
 
 function Status({ r, label }: { r: LayerResponse | undefined; label: string }) {
-  if (!r) return <span className="text-[10.5px] text-[var(--faint)]">載入中…</span>;
-  if (r.status === "ok") return <span className="text-[10.5px] text-[var(--faint)]">{label} · {r.count} 筆 · {fmtTime(r.fetched_at)}</span>;
-  return <span className="text-[10.5px] text-[var(--sev-medium)]">{r.status === "disabled" ? "未設定金鑰" : "暫時無法取得"}{r.detail ? `：${r.detail}` : ""}</span>;
+  if (!r) return <span className="text-[12.5px] text-[var(--faint)]">載入中…</span>;
+  if (r.status === "ok") return <span className="text-[12.5px] text-[var(--faint)]">{label} · {r.count} 筆 · {fmtTime(r.fetched_at)}</span>;
+  return <span className="text-[12.5px] text-[var(--sev-medium)]">{r.status === "disabled" ? "未設定金鑰" : "暫時無法取得"}{r.detail ? `：${r.detail}` : ""}</span>;
 }
 
 function Block({ title, status, children }: { title: string; status: React.ReactNode; children: React.ReactNode }) {
@@ -106,7 +106,7 @@ export default function IntelPanel({ platformId, enabledLayers, cases, selectedC
                   <span className="font-medium text-[var(--ink)]">{f.properties.alert === "red" ? "紅色警戒" : "黃色警戒"}</span> {f.properties.town}
                   {f.properties.vill} · {f.properties.name}
                   {f.properties.road ? ` · ${f.properties.road}` : ""}
-                  <span className="block text-[10.5px] text-[var(--muted)]">{f.properties.debris_no || f.properties.zone_no} · 保全 {f.properties.households_class || "—"} · {f.properties.alert_time}</span>
+                  <span className="block text-[12.5px] text-[var(--muted)]">{f.properties.debris_no || f.properties.zone_no} · 保全 {f.properties.households_class || "—"} · {f.properties.alert_time}</span>
                 </span>
               </li>
             ))}
@@ -138,7 +138,7 @@ export default function IntelPanel({ platformId, enabledLayers, cases, selectedC
                   <div className="mt-1 flex h-2 overflow-hidden rounded-full bg-[var(--surface-3)]">
                     <span style={{ width: `${Math.min(100, Number.isFinite(pct) ? pct : 0)}%`, background: color }} />
                   </div>
-                  <div className="mt-0.5 flex justify-between text-[10.5px] text-[var(--muted)]">
+                  <div className="mt-0.5 flex justify-between text-[12.5px] text-[var(--muted)]">
                     <span>蓄水率 {Number.isFinite(pct) ? `${pct}%` : "—"} · 水位 {p.water_level_m ?? "—"} m</span>
                     <span>
                       {p.inflow_cms != null ? `入 ${p.inflow_cms} ` : ""}
@@ -189,16 +189,16 @@ export default function IntelPanel({ platformId, enabledLayers, cases, selectedC
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={`${f.properties.image_url}${f.properties.image_url.includes("?") ? "&" : "?"}t=${Math.floor(Date.now() / 60000)}`} alt={f.properties.name} className="h-20 w-full object-cover" loading="lazy" />
                         ) : (
-                          <div className="grid h-20 place-items-center text-[10px] text-[var(--muted)]">無靜態影像</div>
+                          <div className="grid h-20 place-items-center text-[12px] text-[var(--muted)]">無靜態影像</div>
                         )}
-                        <div className="truncate px-1 py-0.5 text-[10px] text-[var(--ink-2)]">
+                        <div className="truncate px-1 py-0.5 text-[12px] text-[var(--ink-2)]">
                           {f.properties.road} {f.properties.mile || ""} · {(d / 1000).toFixed(1)} km
                         </div>
                       </a>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[11px] text-[var(--muted)]">8 公里內沒有路況監視器。</div>
+                  <div className="text-[13px] text-[var(--muted)]">8 公里內沒有路況監視器。</div>
                 )}
               </div>
             ) : null}
@@ -206,11 +206,11 @@ export default function IntelPanel({ platformId, enabledLayers, cases, selectedC
               <ul className="space-y-1.5">
                 {news.slice(0, 8).map((f) => (
                   <li key={f.id} className="text-xs">
-                    <span className="mr-1.5 inline-block rounded px-1 text-[10px] font-medium" style={{ background: f.properties.status === "closure" ? "#fee2e2" : "var(--surface-3)", color: f.properties.status === "closure" ? "#991b1b" : "var(--ink-2)" }}>
+                    <span className="mr-1.5 inline-block rounded px-1 text-[12px] font-medium" style={{ background: f.properties.status === "closure" ? "#fee2e2" : "var(--surface-3)", color: f.properties.status === "closure" ? "#991b1b" : "var(--ink-2)" }}>
                       {f.properties.status === "closure" ? "封閉／中斷" : "路況"}
                     </span>
                     <span className="text-[var(--ink)]">{f.properties.headline}</span>
-                    <span className="block text-[10.5px] text-[var(--muted)]">{fmtTime(f.properties.published_at)} · {f.properties.authority === "highway" ? "公路局" : "縣市"}</span>
+                    <span className="block text-[12.5px] text-[var(--muted)]">{fmtTime(f.properties.published_at)} · {f.properties.authority === "highway" ? "公路局" : "縣市"}</span>
                   </li>
                 ))}
               </ul>
@@ -229,7 +229,7 @@ export default function IntelPanel({ platformId, enabledLayers, cases, selectedC
             {outages.map((f) => (
               <li key={f.id}>
                 <span className="font-medium text-[var(--ink)]">{f.properties.town}</span> {f.properties.count} 件
-                <span className="block truncate text-[10.5px] text-[var(--muted)]">{(f.properties.items || []).slice(0, 2).map((i: any) => `${i.when} ${i.area}`).join("；")}</span>
+                <span className="block truncate text-[12.5px] text-[var(--muted)]">{(f.properties.items || []).slice(0, 2).map((i: any) => `${i.when} ${i.area}`).join("；")}</span>
               </li>
             ))}
           </ul>

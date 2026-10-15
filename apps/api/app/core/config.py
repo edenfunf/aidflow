@@ -9,9 +9,44 @@ class Settings(BaseSettings):
     # must come from the environment (docker-compose / the managed host).
     DATABASE_URL: str
 
-    # Optional API key gate: when set, government/console endpoints require the
-    # X-API-Key header to match. Empty (default) keeps the open demo mode.
+    # Optional service key: when set, a request carrying a matching X-API-Key
+    # header is treated as a system-administrator service call (scripts, CI).
+    # Staff use accounts (AUTH_*) instead.
     ADMIN_API_KEY: str = ""
+
+    # ── 登入與權限 ──────────────────────────────────────────────────────
+    # true = 政府後台端點一律需要登入（正式環境必須開啟）。false 只供本機開發／
+    # 自動化測試：未帶權杖的請求視為具備全部權限的「開發模式」使用者。
+    AUTH_REQUIRED: bool = True
+    # 簽發登入權杖用的密鑰。未設定時僅開發環境可用（啟動時以臨時密鑰代替，重啟即失效）；
+    # ENVIRONMENT 非 development 時未設定會拒絕啟動。
+    AUTH_SECRET: str = ""
+    AUTH_TOKEN_HOURS: int = 12
+    # 連續登入失敗幾次後鎖定、鎖定幾分鐘
+    AUTH_MAX_FAILED_ATTEMPTS: int = 5
+    AUTH_LOCK_MINUTES: int = 15
+    AUTH_MIN_PASSWORD_LENGTH: int = 10
+    # true = 管理者建立或重設的密碼，使用者首次登入必須先變更。測試階段預設關閉，
+    # 使用者可自行到「帳號設定」變更密碼。
+    AUTH_FORCE_PASSWORD_CHANGE: bool = False
+    # 首次啟動且資料庫沒有任何帳號時，以此建立系統管理者（建立後請立即變更密碼）
+    INITIAL_ADMIN_USERNAME: str = "admin"
+    INITIAL_ADMIN_PASSWORD: str = ""
+
+    # 通報者聯絡資料（稱呼、電話、Email）AES-256-GCM 加密保存的金鑰：32 bytes 的
+    # URL-safe base64，或任一足夠長的隨機字串（例：openssl rand -hex 32）。
+    # 未設定時由 AUTH_SECRET 衍生；正式環境務必設定並妥善保管，遺失將無法解密既有資料。
+    DATA_ENCRYPTION_KEY: str = ""
+
+    # ── 濫用防護：公開端寫入 API 的每 IP 頻率限制（次／分鐘） ──────────────
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REPORTS_PER_MINUTE: int = 10
+    RATE_LIMIT_UPLOADS_PER_MINUTE: int = 30
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 10
+    RATE_LIMIT_LAYERS_PER_MINUTE: int = 60
+    # 反向代理後方時才可開啟：信任 X-Forwarded-For 的最後一個位址（最接近本服務的
+    # 那一跳）。預設關閉，避免用戶端自行偽造標頭繞過頻率限制。
+    TRUST_FORWARDED_FOR: bool = False
 
     # Comma-separated allowed CORS origins, or "*" for any origin
     # (credentials are disabled automatically in that case).
@@ -24,17 +59,12 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
 
-    # Demo mode: enables the demo scenario seeder (/v1/demo/*). Turn off in
-    # production so nobody can inject synthetic reports into a live platform.
-    DEMO_MODE: bool = True
+    # Demo mode: enables the demo scenario seeder (/v1/demo/*). Off by default so
+    # a production deployment cannot inject synthetic reports into a live platform.
+    DEMO_MODE: bool = False
     # 示範情境下，生成出來的平台不累積：只保留最新 N 個（0 = 全部保留）。
     # 內建的南投示範平台永遠保留。
     DEMO_KEEP_GENERATED: int = 1
-
-    # ── AI layer (optional). Used only for scenario understanding in the agent
-    # planner; platform generation itself is deterministic.
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
 
     # ── Deterministic clustering defaults (per-platform policy overrides these).
     CLUSTER_REQUIRED_UNIQUE_REPORTERS: int = 2
@@ -47,7 +77,8 @@ class Settings(BaseSettings):
 
     # Pepper for hashing reporter identities (device key / contact) into an
     # opaque reporter_key. Change per deployment.
-    REPORTER_HASH_SALT: str = "aidflow-dev-salt"
+    # 未設定時僅開發環境可用（啟動時產生臨時鹽）；正式環境未設定會拒絕啟動。
+    REPORTER_HASH_SALT: str = ""
 
     # ── Official open-data connectors ───────────────────────────────────────
     # 中央氣象署 CWA open data (雨量站 O-A0002-001 / 天氣特報 W-C0033-001 /
@@ -110,22 +141,32 @@ class Settings(BaseSettings):
 
     # 對外公開網站基底（通知訊息裡的連結會用到）
     WEB_PUBLIC_BASE_URL: str = "http://localhost:3000"
+    # 對外 API 基底（照片等公開檔案的完整網址，例如上報 EMIC 時附上照片連結）
+    API_PUBLIC_BASE_URL: str = "http://localhost:8000"
 
-    # LINE 官方帳號推播（module: line_notify）。未設定時記錄為模擬通知。
+    # ── LINE BOT：新通報推播至縣府 LINE 群組 ────────────────────────────
+    # Messaging API 的 Channel access token；未設定時通知記錄為「模擬」。
     LINE_CHANNEL_ACCESS_TOKEN: str = ""
+    # Channel secret：驗證 LINE webhook 簽章（群組綁定用）。未設定時 webhook 拒收。
+    LINE_CHANNEL_SECRET: str = ""
 
-    # ── 派遣／出勤 ───────────────────────────────────────────────────────
-    # 路徑規劃：預設公開 OSRM demo server（輕量使用）；正式環境請自架。空字串＝直線估算。
-    OSRM_BASE_URL: str = "https://router.project-osrm.org"
-    # 出勤通報 webhook（縣府 EOC／CAD 系統接收 JSON）。空＝改走 LINE 或模擬。
-    DISPATCH_WEBHOOK_URL: str = ""
-    # 出勤模擬：出發準備時間與平均車速（僅在沒有 AVL 即時車位時使用，並標示為模擬）
-    DISPATCH_PREP_MINUTES: int = 2
-    VEHICLE_SIM_SPEED_KMH: float = 45.0
-    # 示範平台：案件仍在「已派員／前往中」時，模擬車輛循環重播整段路程（地圖標示「示範重播」）
-    VEHICLE_SIM_LOOP_DEMO: bool = True
-    # AVL 即時車位保留時間（秒）：超過即視為離線
-    AVL_STALE_SECONDS: int = 180
+    # ── Email：通報民眾的案件進度通知 ───────────────────────────────────
+    # 未設定 SMTP_HOST 時通知記錄為「模擬」，不會真的寄出。
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_STARTTLS: bool = True
+    SMTP_FROM: str = "AidFlow 災情通報 <no-reply@localhost>"
+    SMTP_TIMEOUT_SECONDS: int = 10
+
+    # ── EMIC（內政部消防署緊急應變管理資訊雲端服務系統）介接 ──────────────
+    # 介接規格尚未由消防署提供。未設定 EMIC_SUBMIT_URL 時採「人工登錄」：承辦
+    # 於 EMIC 建立案件後，回填 EMIC 案號與處理狀態。設定後系統會以 JSON POST
+    # 將欄位對照（app/domain/emic.py）後的案件資料送至該端點。
+    EMIC_SUBMIT_URL: str = ""
+    EMIC_API_TOKEN: str = ""
+    EMIC_TIMEOUT_SECONDS: int = 15
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -143,6 +184,29 @@ class Settings(BaseSettings):
         if v.startswith("postgresql://"):
             return v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
+
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() in {"development", "test", "local"}
+
+    def startup_problems(self) -> list[str]:
+        """Settings that must never reach a non-development deployment."""
+        if self.is_development:
+            return []
+        problems: list[str] = []
+        if not self.AUTH_SECRET.strip():
+            problems.append("AUTH_SECRET 未設定（登入權杖簽章密鑰）")
+        elif len(self.AUTH_SECRET.strip()) < 32:
+            problems.append("AUTH_SECRET 長度不足 32 字元")
+        if not self.DATA_ENCRYPTION_KEY.strip():
+            problems.append("DATA_ENCRYPTION_KEY 未設定（通報者聯絡資料加密金鑰）")
+        if not self.REPORTER_HASH_SALT.strip():
+            problems.append("REPORTER_HASH_SALT 未設定（通報者去識別化雜湊鹽）")
+        if not self.AUTH_REQUIRED:
+            problems.append("AUTH_REQUIRED 為 false（後台端點將不需登入）")
+        if self.cors_allow_all:
+            problems.append("CORS_ORIGINS 為 *（請列出實際的前端網域）")
+        return problems
 
     @property
     def cors_origins_list(self) -> list[str]:

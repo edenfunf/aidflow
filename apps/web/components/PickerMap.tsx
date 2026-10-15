@@ -5,7 +5,8 @@
 // Touches `window`; import via next/dynamic with { ssr: false }.
 
 import { useEffect, useRef } from "react";
-import maplibregl, { type Map as MLMap } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { Map as MLMap } from "maplibre-gl";
 import { addTerrain, circlePolygon, collapseAttribution, loadStyle, localiseLabels } from "@/lib/mapStyle";
 
 export interface PickerMapProps {
@@ -46,11 +47,12 @@ export default function PickerMap({ center, zoom, point, accuracy = null, onPick
     let map: MLMap | null = null;
     loadStyle().then((style) => {
       if (cancelled || !boxRef.current) return;
-      map = new maplibregl.Map({ container: boxRef.current, style, center: [center[1], center[0]], zoom, attributionControl: false, canvasContextAttributes: { antialias: true } });
-      map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
-      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-      map.scrollZoom.disable();
-      mapRef.current = map;
+      const m = new maplibregl.Map({ container: boxRef.current, style, center: [center[1], center[0]], zoom, attributionControl: false, canvasContextAttributes: { antialias: true } });
+      map = m;
+      m.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+      m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+      m.scrollZoom.disable();
+      mapRef.current = m;
       map.on("style.load", () => {
         if (!map) return;
         localiseLabels(map);

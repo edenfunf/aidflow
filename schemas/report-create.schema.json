@@ -15,9 +15,13 @@
     "town": { "type": ["string", "null"], "maxLength": 50 },
     "reporter_role": { "type": "string", "enum": ["citizen", "village_chief", "disaster_officer", "volunteer", "community_org", "agency"], "default": "citizen" },
     "reporter_name": { "type": ["string", "null"], "maxLength": 100, "description": "PII — never public." },
-    "reporter_contact": { "type": ["string", "null"], "maxLength": 100, "description": "PII — never public; hashed to count unique reporters." },
+    "reporter_contact": { "type": ["string", "null"], "maxLength": 100, "description": "Phone (optional). PII — never public; hashed to count unique reporters." },
+    "reporter_email": { "type": ["string", "null"], "maxLength": 254, "description": "E-mail (optional). PII — never public; where progress notifications go." },
+    "notify_opt_in": { "type": "boolean", "default": false, "description": "Receive this case's progress by e-mail (requires reporter_email)." },
     "client_key": { "type": ["string", "null"], "maxLength": 128, "description": "Stable per-device key; only a salted hash is stored." }
   },
   "dependentRequired": { "lat": ["lon"], "lon": ["lat"] },
+  "if": { "properties": { "notify_opt_in": { "const": true } }, "required": ["notify_opt_in"] },
+  "then": { "required": ["reporter_email"], "properties": { "reporter_email": { "type": "string" } } },
   "additionalProperties": false
 }

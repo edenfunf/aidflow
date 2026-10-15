@@ -75,12 +75,12 @@ export default function TrendChart({ trend, height = 120 }: { trend: TrendBucket
         ) : null}
       </svg>
       {hover !== null ? (
-        <div className="pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 rounded border bg-white px-2 py-1 text-[11px] shadow-sm" style={{ borderColor: "var(--line)" }}>
+        <div className="pointer-events-none absolute -top-1 left-1/2 -translate-x-1/2 rounded border bg-white px-2 py-1 text-[13px] shadow-sm" style={{ borderColor: "var(--line)" }}>
           <span className="text-[var(--muted)]">{hourLabel(trend[hover].start)}:00　</span>
           通報 {trend[hover].reports} · 成案 {trend[hover].cases_created} · 完成 {trend[hover].cases_resolved}
         </div>
       ) : null}
-      <div className="mt-1 flex items-center gap-4 text-[11px] text-[var(--muted)]">
+      <div className="mt-1 flex items-center gap-4 text-[13px] text-[var(--muted)]">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#5b7ba6" }} /> 每小時通報
         </span>
@@ -108,7 +108,7 @@ export function BreakdownBars({ items, total, max = 6 }: { items: { key: string;
         </li>
       ))}
       {total !== undefined && items.length > max ? (
-        <li className="text-[11px] text-[var(--faint)]">其他 {items.slice(max).reduce((a, b) => a + b.count, 0)} 件</li>
+        <li className="text-[13px] text-[var(--faint)]">其他 {items.slice(max).reduce((a, b) => a + b.count, 0)} 件</li>
       ) : null}
     </ul>
   );

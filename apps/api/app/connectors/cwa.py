@@ -302,22 +302,6 @@ def _find_one(obj, name: str):
     return None
 
 
-def _find_key_legacy(obj, names: tuple[str, ...]):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k in names and v not in (None, ""):
-                return v
-        for v in obj.values():
-            got = _find_key(v, names)
-            if got is not None:
-                return got
-    elif isinstance(obj, list):
-        for v in obj:
-            got = _find_key(v, names)
-            if got is not None:
-                return got
-    return None
-
 
 def radar_bounds(body: dict | None = None) -> tuple[float, float, float, float]:
     """(W, S, E, N). Prefer coordinates carried by the response, else the documented extent."""

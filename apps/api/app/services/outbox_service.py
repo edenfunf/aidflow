@@ -27,26 +27,18 @@ def enqueue_event(
     return event
 
 
-def list_events(
-    db: Session,
-    *,
-    processed: bool | None = None,
-    limit: int = 20,
-) -> list[EventOutbox]:
-    query = select(EventOutbox)
-    if processed is not None:
-        query = query.where(EventOutbox.processed == processed)
-    return list(db.scalars(query.order_by(EventOutbox.created_at.desc()).limit(limit)).all())
-
 
 def list_platform_events(
-    db: Session, platform_id: uuid.UUID, *, limit: int = 200, offset: int = 0
+    db: Session, platform_id: uuid.UUID, *, limit: int = 200, offset: int = 0,
+    exclude_prefixes: tuple[str, ...] = (),
 ) -> list[EventOutbox]:
     """The audit trail of one platform — every event carries platform_id in
     its payload."""
+    query = select(EventOutbox).where(EventOutbox.payload["platform_id"].astext == str(platform_id))
+    for prefix in exclude_prefixes:
+        query = query.where(~EventOutbox.event_type.startswith(prefix))
     query = (
-        select(EventOutbox)
-        .where(EventOutbox.payload["platform_id"].astext == str(platform_id))
+        query
         .order_by(EventOutbox.created_at.desc(), EventOutbox.id.desc())
         .limit(limit)
         .offset(offset)

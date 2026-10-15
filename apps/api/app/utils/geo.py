@@ -152,51 +152,13 @@ def mean_point(points: list[tuple[float, float]]) -> tuple[float, float]:
     return (sum(p[0] for p in points) / n, sum(p[1] for p in points) / n)
 
 
-# ── polyline helpers (dispatch routes / vehicle simulation) ─────────────
-def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Initial bearing from point 1 to point 2, degrees clockwise from north."""
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dl = math.radians(lon2 - lon1)
-    x = math.sin(dl) * math.cos(p2)
-    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
-    return (math.degrees(math.atan2(x, y)) + 360) % 360
-
-
-def polyline_length_m(coords: list[list[float]]) -> float:
-    """Length of a GeoJSON LineString ([lon, lat] pairs) in metres."""
-    total = 0.0
-    for (lon1, lat1), (lon2, lat2) in zip(coords, coords[1:]):
-        total += haversine_m(lat1, lon1, lat2, lon2)
-    return total
-
-
-def point_along(coords: list[list[float]], dist_m: float) -> tuple[float, float, float]:
-    """(lat, lon, heading) at ``dist_m`` along a [lon, lat] polyline; clamped
-    to the ends."""
-    if not coords:
-        raise ValueError("empty polyline")
-    if len(coords) == 1 or dist_m <= 0:
-        lon, lat = coords[0]
-        nxt = coords[1] if len(coords) > 1 else coords[0]
-        return lat, lon, bearing_deg(lat, lon, nxt[1], nxt[0])
-    walked = 0.0
-    for (lon1, lat1), (lon2, lat2) in zip(coords, coords[1:]):
-        seg = haversine_m(lat1, lon1, lat2, lon2)
-        if seg <= 0:
-            continue
-        if walked + seg >= dist_m:
-            t = (dist_m - walked) / seg
-            return lat1 + (lat2 - lat1) * t, lon1 + (lon2 - lon1) * t, bearing_deg(lat1, lon1, lat2, lon2)
-        walked += seg
-    (lon1, lat1), (lon2, lat2) = coords[-2], coords[-1]
-    return lat2, lon2, bearing_deg(lat1, lon1, lat2, lon2)
-
-
+# ── polyline helpers ─────────────────────────────────────────────────────
 def simplify_line(coords: list[list[float]], tolerance_deg: float = 0.0004, max_points: int = 260) -> list[list[float]]:
     """Ramer–Douglas–Peucker in degree space (≈45 m at the default tolerance).
 
-    A dispatch route from OSRM can carry 2,000 vertices — far more than any
-    map scale shows, and the browser pays for every one of them on each poll.
+    Official survey geometry (e.g. debris-flow streams) can carry thousands of
+    vertices — far more than any map scale shows, and the browser pays for
+    every one of them.
     The shape is preserved; only redundant collinear points are dropped.
     """
     if len(coords) <= 2:

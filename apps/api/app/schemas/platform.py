@@ -14,10 +14,11 @@ class ClusterPolicyInput(BaseModel):
 
 
 class PlatformCreate(BaseModel):
-    """The human-approved plan. Everything is validated against the registry;
-    core modules and dependencies are always added."""
+    """A named disaster. Everything is validated against the registry; core
+    modules and dependencies are always added. Modules / layers / categories
+    left out are derived from the hazard types."""
 
-    name: str = Field(..., min_length=1, max_length=120)
+    name: str = Field(..., min_length=1, max_length=120, description="災害名稱，例如「115 年 0903 豪雨」")
     brief: str | None = Field(default=None, max_length=4000)
     hazards: list[str] = Field(..., min_length=1)
     county: str | None = Field(default=None, max_length=20)
@@ -67,12 +68,20 @@ class PlatformDetail(PlatformItem):
     module_configs: list[ModuleConfigItem] = Field(default_factory=list)
     public_url: str
     console_url: str
+    embed_url: str = ""
     updated_at: datetime
 
 
 class PlatformListResponse(BaseModel):
     items: list[PlatformItem]
     total: int
+
+
+class PlatformPreviewRequest(BaseModel):
+    name: str = Field(default="", max_length=120)
+    hazards: list[str] | None = Field(default=None, description="未提供時依災害名稱建議")
+    county: str | None = Field(default=None, max_length=20)
+    towns: list[str] = Field(default_factory=list)
 
 
 class PlatformStatusUpdate(BaseModel):

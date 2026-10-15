@@ -1,8 +1,10 @@
 """Citizen report intake (modules: report_form, report_category, geo_location,
-reporter_role, severity_triage) and the hand-off into the clustering engine.
+reporter_role, severity_triage, progress_subscription) and the hand-off into
+the clustering engine.
 """
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import datetime
 
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.db.models import IncidentCase, Platform, Report, ReportCluster
 from app.domain.categories import CATEGORIES, REPORTER_ROLE_KEYS, escalate
 from app.schemas.report import ReportCreate
-from app.services import cluster_service, outbox_service, privacy_service
+from app.services import cluster_service, notification_service, outbox_service, privacy_service
 from app.utils.geo import TOWN_CENTROIDS, haversine_m, normalize_admin
 
 
@@ -62,8 +64,11 @@ def create_report(
     client_key: str | None = None,
     source: str = "web",
     created_at: datetime | None = None,
+    notify: bool = True,
 ) -> tuple[Report, ReportCluster | None, IncidentCase | None]:
-    """Insert the report, cluster it, maybe create a case — one transaction."""
+    """Insert the report, cluster it, maybe create a case — one transaction.
+    After the commit the county LINE group and subscribed reporters are told
+    (``notify=False`` for bulk seeding)."""
     if platform.status == "archived":
         raise PlatformNotAcceptingError()
     allowed = allowed_categories(platform)
@@ -88,10 +93,13 @@ def create_report(
         reporter_role=role,
         reporter_name=payload.reporter_name,
         reporter_contact=payload.reporter_contact,
-        reporter_key=privacy_service.reporter_key(payload.reporter_contact, client_key),
+        reporter_email=payload.reporter_email,
+        notify_opt_in=bool(payload.notify_opt_in and payload.reporter_email),
+        notify_token=secrets.token_urlsafe(24) if payload.notify_opt_in and payload.reporter_email else None,
+        reporter_key=privacy_service.reporter_key(payload.reporter_contact or payload.reporter_email, client_key),
         status="received",
         source=source,
-        raw_payload=payload.model_dump(mode="json", exclude={"reporter_name", "reporter_contact"}),
+        raw_payload=payload.model_dump(mode="json", exclude={"reporter_name", "reporter_contact", "reporter_email"}),
     )
     if created_at is not None:
         report.created_at = created_at
@@ -123,7 +131,27 @@ def create_report(
         db.refresh(cluster)
     if case is not None:
         db.refresh(case)
+    if notify:
+        _notify_after_intake(db, platform, report, cluster, case)
     return report, cluster, case
+
+
+def _notify_after_intake(db: Session, platform: Platform, report: Report,
+                         cluster: ReportCluster | None, case: IncidentCase | None) -> None:
+    try:
+        if case is not None:
+            # the report tipped a spot over the threshold: review needed
+            notification_service.staff_review_needed(platform, case)
+            notification_service.notify_reporters(db, platform, case)
+        elif cluster is None or cluster.report_count == 1:
+            # a new spot (or no location at all) — the group hears about it once
+            notification_service.staff_new_report(platform, report, cluster)
+        elif report.case_id and report.notify_opt_in:
+            existing = db.get(IncidentCase, report.case_id)
+            if existing is not None:
+                notification_service.notify_reporter(platform, existing, report)
+    except Exception:  # noqa: BLE001 — never fail an accepted report on a notification
+        pass
 
 
 def list_reports(

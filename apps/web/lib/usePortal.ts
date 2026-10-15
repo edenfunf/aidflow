@@ -11,12 +11,11 @@ import type { LayerResponse, LayerStatusItem, MapFeature, MapFeatureCollection, 
 
 /** What each surface opens with.
  *
- *  public  — "where is it dangerous, and where do I report?" Warnings, rain,
- *            hazardous streams and shelters are on; the government's own
- *            movements (routes, ambulances) are not a citizen's business by
- *            default, though the chip is still there for transparency.
- *  console — an operations picture: dispatch and vehicles on, weather on,
- *            the heavier survey layers a click away.
+ *  public  — "where is it dangerous, and where do I report?" Warnings, rain
+ *            and hazardous streams are on; every other data layer is the
+ *            citizen's choice in the 資料圖層 panel.
+ *  console — an operations picture: warnings and radar on, the heavier
+ *            survey layers a click away.
  */
 // shelters are useful but there are ~390 of them in one county: a chip away,
 // not a default carpet of dots
@@ -25,7 +24,7 @@ const CONSOLE_OFFICIAL_ON = ["official_alert", "radar"];
 
 export function defaultVisibility(layers: string[], surface: "public" | "console" = "public"): Record<string, boolean> {
   const on = surface === "console" ? CONSOLE_OFFICIAL_ON : PUBLIC_OFFICIAL_ON;
-  const v: Record<string, boolean> = { dispatch: surface === "console" };
+  const v: Record<string, boolean> = {};
   for (const k of layers) {
     if (k === "heatmap" || k === "government_processing") v[k] = false;
     else if (OFFICIAL_LAYERS.includes(k)) v[k] = on.includes(k);

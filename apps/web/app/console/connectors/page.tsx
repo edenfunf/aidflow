@@ -40,7 +40,7 @@ export default function ConnectorsPage() {
                   <td>
                     <div className="font-medium">{c.name}</div>
                     <div className="max-w-md text-xs text-[var(--ink-2)]">{c.description}</div>
-                    <a href={c.homepage} target="_blank" rel="noreferrer" className="text-[11px] text-[var(--focus)] hover:underline">
+                    <a href={c.homepage} target="_blank" rel="noreferrer" className="text-[13px] text-[var(--focus)] hover:underline">
                       {c.homepage}
                     </a>
                   </td>
@@ -55,13 +55,13 @@ export default function ConnectorsPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="text-xs">{c.requires_key ? <code className="rounded bg-[var(--surface-3)] px-1 py-0.5 text-[11px]">{c.key_env}</code> : "公開，無需金鑰"}</td>
+                  <td className="text-xs">{c.requires_key ? <code className="rounded bg-[var(--surface-3)] px-1 py-0.5 text-[13px]">{c.key_env}</code> : "公開，無需金鑰"}</td>
                   <td className="text-xs">
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.live_enabled ? "var(--st-done)" : "var(--st-pending)" }} />
                       {c.live_enabled ? "可即時介接" : "未設定（graceful fallback）"}
                     </span>
-                    {c.detail ? <div className="mt-0.5 text-[11px] text-[var(--muted)]">{c.detail}</div> : null}
+                    {c.detail ? <div className="mt-0.5 text-[13px] text-[var(--muted)]">{c.detail}</div> : null}
                   </td>
                 </tr>
               ))}

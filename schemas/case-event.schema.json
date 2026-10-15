@@ -6,7 +6,7 @@
   "type": "object",
   "required": ["event_type", "label", "at"],
   "properties": {
-    "event_type": { "type": "string", "enum": ["report.received", "threshold_reached", "case.created", "status_changed", "public_update", "assignment_changed"] },
+    "event_type": { "type": "string", "enum": ["report.received", "threshold_reached", "case.created", "status_changed", "public_update", "emic_updated"] },
     "label": { "type": "string" },
     "note": { "type": ["string", "null"] },
     "to_status": { "type": ["string", "null"] },

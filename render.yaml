@@ -14,15 +14,28 @@ services:
           name: aidflow-db
           property: connectionString
       - key: DEMO_MODE
-        value: "true"
+        value: "false"
       # demo: allow the Cloudflare frontend (and anything else) to call the API
       - key: CORS_ORIGINS
         value: "*"
       # set to the Cloudflare Workers URL after the frontend is deployed
       - key: WEB_PUBLIC_BASE_URL
         sync: false
-      # optional AI drafting layer
-      - key: OPENAI_API_KEY
+      # staff login: set a long random secret and the first administrator's password
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: AUTH_SECRET
+        generateValue: true
+      # encrypts reporters' contact details at rest — never rotate without re-encrypting
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      - key: API_PUBLIC_BASE_URL
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
         sync: false
 
 databases:

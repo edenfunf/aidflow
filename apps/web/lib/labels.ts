@@ -1,5 +1,5 @@
 // Shared vocabulary: labels and the reserved colours for severity, status and
-// map layers. Kept free of Leaflet so it can be imported on the server.
+// map layers. Kept free of map libraries so it can be imported on the server.
 
 import type { CaseStatus, Phase, Severity } from "./types";
 
@@ -17,7 +17,7 @@ export const SEVERITY_COLOR: Record<Severity, string> = {
   critical: "var(--sev-critical)",
 };
 
-// hex copies for canvas / Leaflet (CSS variables are not resolvable there)
+// hex copies for canvas / map styles (CSS variables are not resolvable there)
 export const SEVERITY_HEX: Record<Severity, string> = {
   low: "#98a2b3",
   medium: "#dc8a0c",
@@ -28,43 +28,44 @@ export const SEVERITY_HEX: Record<Severity, string> = {
 export const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low"];
 
 export const STATUS_LABEL: Record<CaseStatus, string> = {
-  reported: "已通報",
-  verifying: "查證中",
-  threshold_reached: "已成案",
-  awaiting_dispatch: "待派工",
-  assigned: "已派員",
-  en_route: "前往中",
-  on_site: "人員抵達",
-  processing: "處理中",
-  resolved: "已完成",
+  pending_review: "審核中",
+  reported_emic: "已上報 EMIC",
+  emic_processing: "處理中",
+  community_open: "開放民眾協助",
+  community_submitted: "處理完成確認中",
   closed: "已結案",
   dismissed: "不成案",
 };
 
+/** Console wording where it differs from the public one. */
+export const CONSOLE_STATUS_LABEL: Record<CaseStatus, string> = {
+  ...STATUS_LABEL,
+  pending_review: "待審核",
+  community_submitted: "待確認完成",
+};
+
 export const PHASE_OF: Record<CaseStatus, Phase> = {
-  reported: "pending",
-  verifying: "pending",
-  threshold_reached: "pending",
-  awaiting_dispatch: "pending",
-  assigned: "active",
-  en_route: "active",
-  on_site: "active",
-  processing: "active",
-  resolved: "done",
+  pending_review: "pending",
+  reported_emic: "active",
+  emic_processing: "active",
+  community_open: "community",
+  community_submitted: "community",
   closed: "done",
   dismissed: "dismissed",
 };
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  pending: "待處理",
-  active: "處理中",
-  done: "已完成",
+  pending: "審核中",
+  active: "處理中（EMIC）",
+  community: "民眾可協助",
+  done: "已結案",
   dismissed: "不成案",
 };
 
 export const PHASE_COLOR: Record<Phase, string> = {
   pending: "var(--st-pending)",
   active: "var(--st-active)",
+  community: "var(--st-community)",
   done: "var(--st-done)",
   dismissed: "var(--st-dismissed)",
 };
@@ -72,8 +73,14 @@ export const PHASE_COLOR: Record<Phase, string> = {
 export const PHASE_HEX: Record<Phase, string> = {
   pending: "#b54708",
   active: "#1d4ed8",
+  community: "#0e7490",
   done: "#067647",
   dismissed: "#667085",
+};
+
+export const TRACK_LABEL: Record<string, string> = {
+  emic: "上報 EMIC",
+  community: "民間可處理",
 };
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -83,6 +90,12 @@ export const ROLE_LABEL: Record<string, string> = {
   volunteer: "志工",
   community_org: "社區組織",
   agency: "公務單位",
+};
+
+export const STAFF_ROLE_LABEL: Record<string, string> = {
+  officer: "承辦審核人員",
+  supervisor: "業務主管",
+  admin: "系統管理者",
 };
 
 export const HAZARD_LABEL: Record<string, string> = {
@@ -140,7 +153,7 @@ export interface LayerMeta {
 }
 
 export const LAYERS: Record<string, LayerMeta> = {
-  incident_cases: { key: "incident_cases", label: "正式案件", hex: "#0b2545", kind: "internal" },
+  incident_cases: { key: "incident_cases", label: "災情案件", hex: "#0b2545", kind: "internal" },
   report_clusters: { key: "report_clusters", label: "多人回報聚類", hex: "#475467", kind: "internal" },
   citizen_reports: { key: "citizen_reports", label: "民眾通報", hex: "#667085", kind: "internal" },
   heatmap: { key: "heatmap", label: "災情熱區", hex: "#d92d20", kind: "internal" },
@@ -178,19 +191,20 @@ export function categoryHex(category: string): string {
 
 export const EVENT_LABEL: Record<string, string> = {
   "report.received": "民眾回報",
-  threshold_reached: "達到案件成立門檻",
-  "case.created": "正式成案",
+  threshold_reached: "達到多人回報門檻",
+  "case.created": "成案",
   status_changed: "狀態更新",
   public_update: "處理進度",
   internal_note: "內部備註",
-  assignment_changed: "改派處理單位",
-  dispatch_notified: "已通報處理單位",
+  emic_updated: "EMIC 資訊更新",
+  emic_submitted: "已上報 EMIC",
+  emic_submit_failed: "EMIC 自動上報失敗",
 };
 
 export const DOMAIN_LABEL: Record<string, string> = {
   reporting: "災情通報",
   processing: "案件處理",
-  dispatch: "派工調度",
+  handling: "審核與處理",
   visualization: "災情視覺化",
   official_data: "官方資料",
   notification: "通知推播",
@@ -213,55 +227,18 @@ export const TREND_LABEL: Record<string, string> = {
   steady: "情勢平穩",
 };
 
-// ── responders / vehicles ──────────────────────────────────────────────
-export const UNIT_KIND_LABEL: Record<string, string> = {
-  fire: "消防單位",
-  police: "警察單位",
-  town_office: "鄉鎮公所",
-  highway: "公路局工務段",
-  river: "水利署河川分署",
-  slope: "水保署分署",
-  power: "台電",
-  water_supply: "自來水公司",
+export const NOTIFY_KIND_LABEL: Record<string, string> = {
+  new_report: "新通報",
+  review_needed: "待審核",
+  community_submitted: "民眾回報已處理",
+  case_progress: "進度通知",
+  test: "測試訊息",
 };
 
-// route / vehicle colour by the responsible unit kind (validated set)
-export const UNIT_KIND_HEX: Record<string, string> = {
-  fire: "#be123c",
-  police: "#2563eb",
-  town_office: "#ea580c",
-  highway: "#ea580c",
-  river: "#0d9488",
-  slope: "#ca8a04",
-  power: "#7c3aed",
-  water_supply: "#0d9488",
-};
-
-export const VEHICLE_LABEL: Record<string, string> = {
-  fire_engine: "消防車",
-  ambulance: "救護車",
-  police_car: "警車",
-  works_truck: "工程車",
-};
-
-export const VEHICLE_GLYPH: Record<string, string> = {
-  fire_engine: "消",
-  ambulance: "救",
-  police_car: "警",
-  works_truck: "工",
-};
-
-export const VEHICLE_HEX: Record<string, string> = {
-  fire_engine: "#be123c",
-  ambulance: "#dc2626",
-  police_car: "#2563eb",
-  works_truck: "#ea580c",
-};
-
-export const VEHICLE_STATUS_LABEL: Record<string, string> = {
-  preparing: "整備出發",
-  en_route: "前往中",
-  on_site: "已抵達",
-  returning: "返隊中",
-  live: "即時位置",
+export const NOTIFY_STATUS_LABEL: Record<string, string> = {
+  sent: "已送出",
+  queued: "送出中",
+  simulated: "模擬（未設定）",
+  failed: "失敗",
+  skipped: "略過",
 };

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AidFlow 災情通報與處理平台",
-  description: "災情通報、案件處理、政府派工、資訊透明與災情視覺化。",
+  description: "民眾災情通報、政府審核處理與處理進度公開。",
 };
 
 export const viewport: Viewport = {

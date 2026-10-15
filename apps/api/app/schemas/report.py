@@ -4,9 +4,13 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Severity = Literal["low", "medium", "high", "critical"]
+
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
 
 
 class ReportCreate(BaseModel):
@@ -22,16 +26,37 @@ class ReportCreate(BaseModel):
     town: str | None = Field(default=None, max_length=50)
     reporter_role: str = Field(default="citizen", description="citizen / village_chief / disaster_officer / volunteer / community_org")
     reporter_name: str | None = Field(default=None, max_length=100, description="PII，僅內部")
-    reporter_contact: str | None = Field(default=None, max_length=100, description="PII，僅內部")
+    reporter_contact: str | None = Field(default=None, max_length=100, description="電話（選填）。PII，僅內部")
+    reporter_email: str | None = Field(default=None, max_length=254, description="Email（選填，接收進度通知用）。PII，僅內部")
+    notify_opt_in: bool = Field(default=False, description="是否接收案件處理進度通知（需填 Email）")
     client_key: str | None = Field(
         default=None, max_length=128,
         description="前端產生的裝置識別，用於計算不同回報者；只儲存雜湊",
     )
 
+    @field_validator("reporter_name", "reporter_contact", "reporter_email", "description", "address", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+    @field_validator("reporter_email")
+    @classmethod
+    def _email_shape(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Email 格式不正確")
+        return v.lower()
+
     @model_validator(mode="after")
     def _coords_paired(self) -> ReportCreate:
         if (self.lat is None) != (self.lon is None):
             raise ValueError("lat and lon must be provided together")
+        if self.notify_opt_in and not self.reporter_email:
+            raise ValueError("接收進度通知需填寫 Email")
         return self
 
     model_config = {
@@ -59,6 +84,7 @@ class ReportCreateResponse(BaseModel):
     case_created: bool = False
     unique_reporters: int = 0
     required_unique_reporters: int
+    notify_opt_in: bool = False
     message: str
 
 
@@ -97,8 +123,12 @@ class ReportInternal(BaseModel):
     town: str | None = None
     address: str | None = None
     reporter_role: str
+    # PII — only present for roles holding view_pii
     reporter_name: str | None = None
     reporter_contact: str | None = None
+    reporter_email: str | None = None
+    pii_hidden: bool = False
+    notify_opt_in: bool = False
     has_identity: bool = False
     status: str
     cluster_id: uuid.UUID | None = None

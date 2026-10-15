@@ -85,15 +85,15 @@ export default function ModulesPage() {
                           <div className="flex items-center gap-2 font-medium">
                             {m.layer_key ? <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: LAYERS[m.layer_key]?.hex || "#667085" }} /> : null}
                             {m.name}
-                            {m.core ? <span className="af-chip !py-0 text-[10px]">核心</span> : null}
-                            {!m.implemented ? <span className="af-chip !py-0 text-[10px]">規劃中</span> : null}
+                            {m.core ? <span className="af-chip !py-0 text-[12px]">核心</span> : null}
+                            {!m.implemented ? <span className="af-chip !py-0 text-[12px]">規劃中</span> : null}
                           </div>
-                          <div className="font-mono text-[11px] text-[var(--muted)]">{m.id}</div>
+                          <div className="font-mono text-[13px] text-[var(--muted)]">{m.id}</div>
                           <div className="max-w-xl text-xs text-[var(--ink-2)]">{m.description}</div>
                         </td>
                         <td className="text-xs">{MODULE_TYPE_LABEL[m.module_type]}</td>
                         <td className="text-xs">{m.applicable_hazards.includes("*") ? "所有災害" : m.applicable_hazards.map((h) => HAZARD_LABEL[h] || h).join("、")}</td>
-                        <td className="font-mono text-[11px] text-[var(--muted)]">{m.dependencies.join(", ") || "—"}</td>
+                        <td className="font-mono text-[13px] text-[var(--muted)]">{m.dependencies.join(", ") || "—"}</td>
                         <td className="text-xs">{m.default_enabled ? "建議啟用" : "手動"}</td>
                       </tr>
                     ))}

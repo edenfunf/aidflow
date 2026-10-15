@@ -3,6 +3,17 @@
 Statuses are a closed enum and every transition is declared here, so the
 console can only move a case along an allowed path and the public timeline is
 always derived from real, validated transitions.
+
+Flow agreed with 南投縣政府 (2026-09-03):
+
+    民眾通報 → 同地點聚合 → pending_review（承辦審核點）
+        ├─ 需上報   → reported_emic → emic_processing → closed
+        ├─ 小型災情 → community_open → community_submitted → closed
+        │                    ↑ 退回 ────────────┘
+        └─ 誤報／重複 → dismissed
+
+EMIC 欄位規格尚未提供：EMIC 側的細部狀態以 ``IncidentCase.emic_status``
+（自 EMIC 同步或承辦登錄的文字）呈現，本系統只維護上述粗粒度流程。
 """
 from __future__ import annotations
 
@@ -10,76 +21,70 @@ from enum import Enum
 
 
 class CaseStatus(str, Enum):
-    reported = "reported"  # single-report case, not yet verified
-    verifying = "verifying"  # operator is checking a single-report case
-    threshold_reached = "threshold_reached"  # N unique reporters agreed
-    awaiting_dispatch = "awaiting_dispatch"
-    assigned = "assigned"
-    en_route = "en_route"
-    on_site = "on_site"
-    processing = "processing"
-    resolved = "resolved"
-    closed = "closed"
-    dismissed = "dismissed"  # judged not an incident (false / duplicate)
+    pending_review = "pending_review"  # 待承辦審核分流
+    reported_emic = "reported_emic"  # 已上報 EMIC
+    emic_processing = "emic_processing"  # EMIC 案件處理中
+    community_open = "community_open"  # 開放民眾協助處理
+    community_submitted = "community_submitted"  # 民眾已上傳處理完成照片，待承辦確認
+    closed = "closed"  # 已結案（自公開地圖撤除）
+    dismissed = "dismissed"  # 不成案（誤報／重複）
 
 
 TRANSITIONS: dict[CaseStatus, frozenset[CaseStatus]] = {
-    CaseStatus.reported: frozenset({CaseStatus.verifying, CaseStatus.threshold_reached,
-                                    CaseStatus.awaiting_dispatch, CaseStatus.dismissed}),
-    CaseStatus.verifying: frozenset({CaseStatus.threshold_reached, CaseStatus.awaiting_dispatch,
-                                     CaseStatus.dismissed}),
-    CaseStatus.threshold_reached: frozenset({CaseStatus.awaiting_dispatch, CaseStatus.dismissed}),
-    CaseStatus.awaiting_dispatch: frozenset({CaseStatus.assigned, CaseStatus.dismissed}),
-    CaseStatus.assigned: frozenset({CaseStatus.en_route, CaseStatus.on_site,
-                                    CaseStatus.awaiting_dispatch}),
-    CaseStatus.en_route: frozenset({CaseStatus.on_site, CaseStatus.awaiting_dispatch}),
-    CaseStatus.on_site: frozenset({CaseStatus.processing, CaseStatus.resolved}),
-    CaseStatus.processing: frozenset({CaseStatus.resolved, CaseStatus.on_site}),
-    CaseStatus.resolved: frozenset({CaseStatus.closed, CaseStatus.processing}),
+    CaseStatus.pending_review: frozenset({CaseStatus.reported_emic, CaseStatus.community_open,
+                                          CaseStatus.dismissed}),
+    CaseStatus.reported_emic: frozenset({CaseStatus.emic_processing, CaseStatus.closed}),
+    CaseStatus.emic_processing: frozenset({CaseStatus.closed}),
+    CaseStatus.community_open: frozenset({CaseStatus.community_submitted, CaseStatus.reported_emic,
+                                          CaseStatus.closed, CaseStatus.dismissed}),
+    CaseStatus.community_submitted: frozenset({CaseStatus.closed, CaseStatus.community_open,
+                                               CaseStatus.reported_emic}),
     CaseStatus.closed: frozenset(),
     CaseStatus.dismissed: frozenset(),
 }
 
+EMIC_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.reported_emic, CaseStatus.emic_processing})
+COMMUNITY_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.community_open, CaseStatus.community_submitted})
 OPEN_STATUSES: frozenset[CaseStatus] = frozenset(
     s for s in CaseStatus if s not in (CaseStatus.closed, CaseStatus.dismissed)
 )
-ACTIVE_STATUSES: frozenset[CaseStatus] = frozenset(
-    {CaseStatus.assigned, CaseStatus.en_route, CaseStatus.on_site, CaseStatus.processing}
-)
-DONE_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.resolved, CaseStatus.closed})
-PENDING_STATUSES: frozenset[CaseStatus] = frozenset(
-    {CaseStatus.reported, CaseStatus.verifying, CaseStatus.threshold_reached,
-     CaseStatus.awaiting_dispatch}
-)
+DONE_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.closed})
+PENDING_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.pending_review})
+# statuses the case queue shows once a reviewer has decided how to handle it
+QUEUED_STATUSES: frozenset[CaseStatus] = EMIC_STATUSES | COMMUNITY_STATUSES
 
-# what the public sees for each status (the internal vocabulary is richer)
+# what the public sees for each status
 PUBLIC_LABELS: dict[CaseStatus, str] = {
-    CaseStatus.reported: "已通報",
-    CaseStatus.verifying: "查證中",
-    CaseStatus.threshold_reached: "已成案",
-    CaseStatus.awaiting_dispatch: "待派工",
-    CaseStatus.assigned: "已派員",
-    CaseStatus.en_route: "前往中",
-    CaseStatus.on_site: "人員抵達",
-    CaseStatus.processing: "處理中",
-    CaseStatus.resolved: "已完成",
+    CaseStatus.pending_review: "審核中",
+    CaseStatus.reported_emic: "已上報 EMIC",
+    CaseStatus.emic_processing: "處理中",
+    CaseStatus.community_open: "開放民眾協助",
+    CaseStatus.community_submitted: "處理完成確認中",
     CaseStatus.closed: "已結案",
     CaseStatus.dismissed: "不成案",
 }
 
 # coarse public phase used for colour / filters
 PUBLIC_PHASE: dict[CaseStatus, str] = {
-    CaseStatus.reported: "pending",
-    CaseStatus.verifying: "pending",
-    CaseStatus.threshold_reached: "pending",
-    CaseStatus.awaiting_dispatch: "pending",
-    CaseStatus.assigned: "active",
-    CaseStatus.en_route: "active",
-    CaseStatus.on_site: "active",
-    CaseStatus.processing: "active",
-    CaseStatus.resolved: "done",
+    CaseStatus.pending_review: "pending",
+    CaseStatus.reported_emic: "active",
+    CaseStatus.emic_processing: "active",
+    CaseStatus.community_open: "community",
+    CaseStatus.community_submitted: "community",
     CaseStatus.closed: "done",
     CaseStatus.dismissed: "dismissed",
+}
+PHASES = ("pending", "active", "community", "done", "dismissed")
+
+# the track a status belongs to (None = not yet decided)
+TRACK_OF: dict[CaseStatus, str | None] = {
+    CaseStatus.pending_review: None,
+    CaseStatus.reported_emic: "emic",
+    CaseStatus.emic_processing: "emic",
+    CaseStatus.community_open: "community",
+    CaseStatus.community_submitted: "community",
+    CaseStatus.closed: None,
+    CaseStatus.dismissed: None,
 }
 
 
@@ -110,7 +115,7 @@ def assert_transition(frm: CaseStatus | str, to: CaseStatus | str) -> None:
 
 def next_statuses(frm: CaseStatus | str) -> list[str]:
     try:
-        return [s.value for s in TRANSITIONS[CaseStatus(_val(frm))]]
+        return [s.value for s in CaseStatus if s in TRANSITIONS[CaseStatus(_val(frm))]]
     except ValueError:
         return []
 
@@ -129,13 +134,17 @@ def public_label(status: CaseStatus | str) -> str:
         return _val(status)
 
 
-# ordered "happy path" for progress rendering
-PROGRESS_PATH: tuple[CaseStatus, ...] = (
-    CaseStatus.reported,
-    CaseStatus.threshold_reached,
-    CaseStatus.awaiting_dispatch,
-    CaseStatus.assigned,
-    CaseStatus.on_site,
-    CaseStatus.processing,
-    CaseStatus.resolved,
-)
+def track_of(status: CaseStatus | str) -> str | None:
+    try:
+        return TRACK_OF[CaseStatus(_val(status))]
+    except ValueError:
+        return None
+
+
+# ordered progress paths, one per track, for progress rendering
+PROGRESS_PATHS: dict[str | None, tuple[CaseStatus, ...]] = {
+    None: (CaseStatus.pending_review, CaseStatus.closed),
+    "emic": (CaseStatus.pending_review, CaseStatus.reported_emic, CaseStatus.emic_processing, CaseStatus.closed),
+    "community": (CaseStatus.pending_review, CaseStatus.community_open, CaseStatus.community_submitted,
+                  CaseStatus.closed),
+}

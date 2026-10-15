@@ -27,8 +27,8 @@ export function ProgressSteps({ steps }: { steps: ProgressStep[] }) {
                 className="z-10 grid h-4 w-4 place-items-center rounded-full border-2 bg-white"
                 style={{ borderColor: color, background: s.reached ? color : "#fff", boxShadow: s.current ? `0 0 0 3px ${color}33` : undefined }}
               />
-              <span className={`mt-1.5 text-[10.5px] leading-tight ${s.reached ? "font-medium text-[var(--ink)]" : "text-[var(--faint)]"}`}>{s.label}</span>
-              {s.at ? <span className="text-[10px] tabular-nums text-[var(--faint)]">{fmtClock(s.at)}</span> : null}
+              <span className={`mt-1.5 text-[12.5px] leading-tight ${s.reached ? "font-medium text-[var(--ink)]" : "text-[var(--faint)]"}`}>{s.label}</span>
+              {s.at ? <span className="text-[12px] tabular-nums text-[var(--faint)]">{fmtClock(s.at)}</span> : null}
             </div>
           </li>
         );
@@ -51,9 +51,9 @@ export default function CaseTimeline({ items, dense = false }: { items: PublicTi
             <span className="af-tl-icon" style={{ color: dotColor(it), borderColor: dotColor(it) }}>
               <EventIcon type={it.event_type} size={11} />
             </span>
-            {showDay ? <div className="mb-0.5 text-[10px] font-medium tracking-wide text-[var(--faint)]">{day}</div> : null}
+            {showDay ? <div className="mb-0.5 text-[12px] font-medium tracking-wide text-[var(--faint)]">{day}</div> : null}
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[11px] tabular-nums text-[var(--muted)]">{fmtClock(it.at)}</span>
+              <span className="font-mono text-[13px] tabular-nums text-[var(--muted)]">{fmtClock(it.at)}</span>
               <span className={`text-sm ${it.to_status ? "font-semibold" : "font-medium"} text-[var(--ink)]`}>{it.label}</span>
             </div>
             {it.note && it.note !== it.label ? <p className="mt-0.5 text-xs leading-relaxed text-[var(--ink-2)]">{it.note}</p> : null}
@@ -67,7 +67,7 @@ export default function CaseTimeline({ items, dense = false }: { items: PublicTi
 export function CompactTimeline({ items, limit = 4 }: { items: PublicTimelineItem[]; limit?: number }) {
   const shown = items.slice(-limit);
   return (
-    <ul className="space-y-0.5 text-[11px]">
+    <ul className="space-y-0.5 text-[13px]">
       {shown.map((it, i) => (
         <li key={i} className="flex gap-2 text-[var(--ink-2)]">
           <span className="font-mono tabular-nums text-[var(--muted)]">{fmtTime(it.at)}</span>

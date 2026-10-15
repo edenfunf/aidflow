@@ -32,10 +32,10 @@ export const EVENT_ICONS: Record<string, string> = {
   status_changed: '<path d="M5 12h12M13 7l5 5-5 5"/>',
   public_update: '<path d="M4 10v4h3l6 4V6l-6 4H4zM16 9a4 4 0 0 1 0 6"/>',
   internal_note: '<path d="M5 4h10l4 4v12H5z"/><path d="M8 12h8M8 16h6"/>',
-  assignment_changed: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>',
-  dispatch_notified: '<path d="M3 7h10v9H3zM13 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
-  "dispatch.created": '<path d="M3 7h10v9H3zM13 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
-  "avl.ingested": '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
+  // EMIC: a document going up to the national system
+  emic_updated: '<path d="M6 3h9l4 4v14H6z"/><path d="M12 17v-6M9 13l3-3 3 3"/>',
+  emic_submitted: '<path d="M6 3h9l4 4v14H6z"/><path d="M12 17v-6M9 13l3-3 3 3"/>',
+  emic_submit_failed: '<path d="M6 3h9l4 4v14H6z"/><path d="M10 11l4 4M14 11l-4 4"/>',
   "platform.created": '<path d="M4 5h16v14H4z"/><path d="M4 10h16"/>',
   "platform.published": '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
 };

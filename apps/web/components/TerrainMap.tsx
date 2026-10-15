@@ -13,19 +13,15 @@
 //   - report clusters   → hollow rings (below threshold)
 //   - citizen reports   → small dots
 //   - density           → heat layer draped on the terrain
-//   - dispatch          → the real road route from the responding unit to
-//                         the case (OSRM), coloured by unit kind, plus the
-//                         responding vehicles (AVL pings when a fleet system
-//                         feeds them, otherwise a clearly labelled simulation)
 //   - rainfall stations → columns by 24h accumulation; water stations →
 //                         discs by alert level; CAP alerts → polygons
 // A time cutoff lets the portal replay the last 24 hours.
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import maplibregl, { type ExpressionSpecification, type LayerSpecification, type Map as MLMap, type StyleSpecification } from "maplibre-gl";
-import type { GeoFeature, LayerResponse, MapFeature, RouteFeature, VehicleItem } from "@/lib/types";
-import { LAYERS, PHASE_HEX, UNIT_KIND_HEX, VEHICLE_HEX, VEHICLE_LABEL, VEHICLE_STATUS_LABEL, layerHex } from "@/lib/labels";
-import { fmtTime } from "@/lib/format";
+import * as maplibregl from "maplibre-gl";
+import type { ExpressionSpecification, LayerSpecification, Map as MLMap, StyleSpecification } from "maplibre-gl";
+import type { GeoFeature, LayerResponse, MapFeature } from "@/lib/types";
+import { LAYERS, PHASE_HEX, layerHex } from "@/lib/labels";
 import { clusterPopup, esc, officialPopup, reportPopup } from "@/lib/mapPopups";
 import { BASEMAP_ATTRIBUTION, TERRAIN_TILES, ZH_LABEL, collapseAttribution, loadStyle } from "@/lib/mapStyle";
 import { categoryIcon } from "@/lib/categoryIcons";
@@ -42,10 +38,6 @@ export interface TerrainMapProps {
   onSelect?: (feature: MapFeature | GeoFeature | null) => void;
   timeCutoff?: number | null; // epoch ms; features created after it are hidden
   threeD?: boolean;
-  /** active dispatch routes (real road geometry from the API) */
-  routes?: RouteFeature[];
-  /** responding vehicles (AVL or labelled simulation) */
-  vehicles?: VehicleItem[];
   fitToData?: boolean;
   /** showcase mode: the camera slowly circles the scene; pauses on interaction */
   orbit?: boolean;
@@ -53,6 +45,8 @@ export interface TerrainMapProps {
   minimal?: boolean;
   /** screen-space padding (px) kept clear when fitting to data; defaults suit the portal layout */
   fitPadding?: { top: number; bottom: number; left: number; right: number };
+  /** keep this many pixels on the left out of the camera's reckoning (hero card) */
+  padLeft?: number;
   className?: string;
   onReady?: () => void;
 }
@@ -243,7 +237,7 @@ function syncRadar(map: MLMap, frames: RadarFrame[], on: boolean): void {
   const latest = frames[frames.length - 1];
   if (latest && !map.getSource("af-radar")) {
     map.addSource("af-radar", { type: "image", url: latest.url, coordinates: latest.coords as [[number, number], [number, number], [number, number], [number, number]] });
-    map.addLayer({ id: "af-radar", type: "raster", source: "af-radar", paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 8, 0.42, 12, 0.36, 14, 0.25], "raster-fade-duration": 0, "raster-resampling": "linear" } }, map.getLayer("af-arcs-halo") ? "af-arcs-halo" : undefined);
+    map.addLayer({ id: "af-radar", type: "raster", source: "af-radar", paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 8, 0.42, 12, 0.36, 14, 0.25], "raster-fade-duration": 0, "raster-resampling": "linear" } }, map.getLayer("af-reports") ? "af-reports" : undefined);
     st.idx = frames.length - 1;
   }
   if (map.getLayer("af-radar")) map.setLayoutProperty("af-radar", "visibility", st.on ? "visible" : "none");
@@ -295,282 +289,6 @@ const PITCH_3D = 46;
  * terrain pass was filling a 3200-px-wide canvas every frame. 1.25 keeps
  * text crisp enough while cutting fill cost by up to half. */
 const PIXEL_RATIO = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 1.25) : 1;
-
-function hexRgba(hex: string, a: number): string {
-  const n = parseInt(hex.replace("#", ""), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-
-// ── vehicles: a symbol layer (rendered by the map engine, so they are glued to
-// the terrain through pan / zoom / pitch) fed from interpolated positions ──
-interface VehicleTrack {
-  from: [number, number];
-  to: [number, number];
-  t0: number;
-  item: VehicleItem;
-  /** recent drawn positions [lon, lat, t] — the fading tail behind a moving vehicle */
-  hist: [number, number, number][];
-}
-const TRAIL_MS = 150000;
-
-function vehicleTrailLayers(): LayerSpecification[] {
-  return VEHICLE_KINDS.map((kind) => ({
-    id: `af-veh-trail-${kind}`,
-    type: "line" as const,
-    source: "af-veh-trails",
-    filter: ["==", ["get", "kind"], kind],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 14, 4.5],
-      "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, hexRgba(VEHICLE_HEX[kind] || "#475467", 0), 1, hexRgba(VEHICLE_HEX[kind] || "#475467", 0.9)],
-    },
-  }));
-}
-const vehicleTracks = new WeakMap<MLMap, Map<string, VehicleTrack>>();
-const LERP_MS = 2800;
-const VEHICLE_KINDS = ["fire_engine", "ambulance", "police_car", "works_truck"];
-
-const VEHICLE_SPRITES: Record<string, string> = {
-  // 24×44 viewBox, front of the vehicle at the top
-  fire_engine: `
-    <rect x="4" y="2" width="16" height="40" rx="3" fill="#b91c1c" stroke="#7f1d1d" stroke-width="1"/>
-    <rect x="6" y="4" width="12" height="9" rx="1.5" fill="#fca5a5" opacity="0.9"/>
-    <rect x="6" y="15" width="12" height="25" rx="1" fill="#dc2626"/>
-    <rect x="10.5" y="17" width="3" height="21" fill="#f8fafc"/>
-    <rect x="7" y="19" width="10" height="1.5" fill="#f8fafc"/><rect x="7" y="24" width="10" height="1.5" fill="#f8fafc"/>
-    <rect x="7" y="29" width="10" height="1.5" fill="#f8fafc"/><rect x="7" y="34" width="10" height="1.5" fill="#f8fafc"/>
-    <rect class="af-lightbar" x="7" y="1" width="10" height="2.5" rx="1" fill="#ef4444"/>
-    <rect x="2" y="8" width="2" height="6" rx="1" fill="#1f2937"/><rect x="20" y="8" width="2" height="6" rx="1" fill="#1f2937"/>
-    <rect x="2" y="30" width="2" height="6" rx="1" fill="#1f2937"/><rect x="20" y="30" width="2" height="6" rx="1" fill="#1f2937"/>`,
-  ambulance: `
-    <rect x="4" y="2" width="16" height="40" rx="3" fill="#f8fafc" stroke="#9ca3af" stroke-width="1"/>
-    <rect x="6" y="4" width="12" height="8" rx="1.5" fill="#93c5fd"/>
-    <rect x="4" y="14" width="16" height="3" fill="#dc2626"/>
-    <rect x="10.5" y="22" width="3" height="12" fill="#dc2626"/><rect x="6" y="26.5" width="12" height="3" fill="#dc2626"/>
-    <rect class="af-lightbar af-lightbar-b" x="7" y="1" width="10" height="2.5" rx="1" fill="#2563eb"/>
-    <rect x="2" y="8" width="2" height="6" rx="1" fill="#1f2937"/><rect x="20" y="8" width="2" height="6" rx="1" fill="#1f2937"/>
-    <rect x="2" y="30" width="2" height="6" rx="1" fill="#1f2937"/><rect x="20" y="30" width="2" height="6" rx="1" fill="#1f2937"/>`,
-  police_car: `
-    <path d="M6 4 Q12 1 18 4 L19 18 L18 40 Q12 43 6 40 L5 18 Z" fill="#f8fafc" stroke="#6b7280" stroke-width="1"/>
-    <path d="M6 4 Q12 1 18 4 L18 10 L6 10 Z" fill="#111827"/>
-    <path d="M6 34 L18 34 L18 40 Q12 43 6 40 Z" fill="#111827"/>
-    <rect x="6.5" y="11" width="11" height="6" rx="1.5" fill="#93c5fd"/>
-    <rect x="6.5" y="27" width="11" height="5" rx="1.5" fill="#93c5fd"/>
-    <rect class="af-lightbar" x="6.5" y="18.5" width="5.2" height="2.8" rx="1" fill="#ef4444"/>
-    <rect class="af-lightbar af-lightbar-b" x="12.3" y="18.5" width="5.2" height="2.8" rx="1" fill="#2563eb"/>
-    <rect x="3" y="8" width="2" height="6" rx="1" fill="#1f2937"/><rect x="19" y="8" width="2" height="6" rx="1" fill="#1f2937"/>
-    <rect x="3" y="30" width="2" height="6" rx="1" fill="#1f2937"/><rect x="19" y="30" width="2" height="6" rx="1" fill="#1f2937"/>`,
-  works_truck: `
-    <rect x="4" y="2" width="16" height="13" rx="3" fill="#f97316" stroke="#9a3412" stroke-width="1"/>
-    <rect x="6" y="4" width="12" height="6" rx="1.5" fill="#fed7aa"/>
-    <rect x="3" y="16" width="18" height="26" rx="1.5" fill="#4b5563" stroke="#1f2937" stroke-width="1"/>
-    <rect x="5" y="18" width="14" height="22" fill="#6b7280"/>
-    <g stroke="#fbbf24" stroke-width="2.2" opacity="0.95"><line x1="5" y1="24" x2="11" y2="18"/><line x1="5" y1="31" x2="18" y2="18"/><line x1="5" y1="38" x2="19" y2="24"/><line x1="11" y1="40" x2="19" y2="32"/></g>
-    <rect class="af-lightbar af-lightbar-amber" x="8" y="1" width="8" height="2.5" rx="1" fill="#f59e0b"/>
-    <rect x="1.5" y="8" width="2" height="6" rx="1" fill="#1f2937"/><rect x="20.5" y="8" width="2" height="6" rx="1" fill="#1f2937"/>
-    <rect x="1.5" y="28" width="2" height="8" rx="1" fill="#1f2937"/><rect x="20.5" y="28" width="2" height="8" rx="1" fill="#1f2937"/>`,
-};
-
-
-function spriteSvg(kind: string, dim: boolean): string {
-  const body = VEHICLE_SPRITES[kind] || VEHICLE_SPRITES.works_truck;
-  const lights = body.replace(/class="af-lightbar[^"]*"/g, dim ? 'opacity="0.25"' : 'opacity="1"');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="88" viewBox="0 0 24 44">${lights}</svg>`;
-}
-
-/** Rasterise the sprites into the style's image registry (2× for crisp icons). */
-function loadVehicleIcons(map: MLMap): Promise<void> {
-  const jobs: Promise<void>[] = [];
-  for (const kind of VEHICLE_KINDS) {
-    for (const dim of [false, true]) {
-      const id = `veh-${kind}${dim ? "-dim" : ""}`;
-      if (map.hasImage(id)) continue;
-      jobs.push(
-        new Promise<void>((resolve) => {
-          const img = new Image(48, 88);
-          img.onload = () => {
-            if (!map.hasImage(id)) map.addImage(id, img, { pixelRatio: 2 });
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(spriteSvg(kind, dim));
-        })
-      );
-    }
-  }
-  return Promise.all(jobs).then(() => undefined);
-}
-
-function vehicleTag(v: VehicleItem): string {
-  return `${VEHICLE_LABEL[v.kind] || v.kind}·${v.source === "simulated" ? "模擬" : "即時"}`;
-}
-
-function vehiclePopup(v: VehicleItem): string {
-  const moving = v.status === "en_route" || v.status === "returning";
-  const statusLine = v.status === "en_route" && v.eta_minutes ? `前往中，約 ${v.eta_minutes} 分鐘抵達` : VEHICLE_STATUS_LABEL[v.status] || v.status;
-  return `<div style="min-width:190px">
-    <div style="font-size:11px;color:#667085">${esc(VEHICLE_LABEL[v.kind] || v.kind)} · ${v.source === "simulated" ? "模擬位置" : "車隊即時位置"}</div>
-    <div style="font-size:13px;font-weight:600;color:#101828">${esc(v.unit_name || "未知單位")}</div>
-    <div style="margin-top:4px;color:#344054">狀態：${esc(statusLine)}${v.progress != null && moving ? `（路程 ${Math.round(v.progress * 100)}%）` : ""}</div>
-    ${v.case_number ? `<div style="color:#344054">${v.status === "returning" ? "返隊自" : "前往"}：${esc(v.case_number)} ${esc(v.case_title || "")}</div>` : ""}
-    <div style="margin-top:4px;font-size:11px;color:#98a2b3">${v.source === "simulated" ? (v.replay ? "示範重播：案件尚未確認抵達，依道路路徑循環重播行程" : "依派遣時間與道路路徑推算；接入車隊 GPS 後改為即時位置") : `更新 ${esc(fmtTime(v.recorded_at))}`}${v.route_source === "straight_line" ? " · 直線估算" : ""}</div>
-  </div>`;
-}
-
-/** White badge under each vehicle so it reads against terrain at any zoom;
- * the ring takes the vehicle colour and thickens while the light bar blinks. */
-function vehicleHaloLayer(): LayerSpecification {
-  return {
-    id: "af-vehicle-halo",
-    type: "circle",
-    source: "af-vehicles",
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 11, 12, 14.5, 15, 19],
-      "circle-color": "#ffffff",
-      "circle-opacity": 0.96,
-      "circle-stroke-color": ["get", "color"],
-      "circle-stroke-width": ["case", ["==", ["get", "blink"], 1], 3.5, 2.25],
-      "circle-stroke-opacity": ["case", ["==", ["get", "moving"], 1], 1, 0.75],
-    },
-  };
-}
-
-function vehicleLayer(font: string[]): LayerSpecification {
-  return {
-    id: "af-vehicles",
-    type: "symbol",
-    source: "af-vehicles",
-    layout: {
-      "icon-image": ["get", "icon"],
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 12, 0.64, 15, 0.82],
-      "icon-rotate": ["get", "heading"],
-      // heading follows the map's bearing, but the sprite faces the camera so
-      // it is never flattened by the 3D pitch
-      "icon-rotation-alignment": "map",
-      "icon-pitch-alignment": "viewport",
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-      // tags only once the map is close enough for them not to pile up on the pins
-      "text-field": ["step", ["zoom"], "", 11, ["get", "tag"]],
-      "text-font": font,
-      "text-size": 10,
-      "text-anchor": "top",
-      "text-offset": [0, 1.7],
-      "text-allow-overlap": true,
-      "text-optional": true,
-    },
-    paint: { "text-color": "#1d2939", "text-halo-color": "#ffffff", "text-halo-width": 1.4 },
-  };
-}
-
-function updateVehicleTracks(map: MLMap, vehicles: VehicleItem[], show: boolean, now: number): void {
-  let tracks = vehicleTracks.get(map);
-  if (!tracks) {
-    tracks = new Map();
-    vehicleTracks.set(map, tracks);
-  }
-  const seen = new Set<string>();
-  for (const v of show ? vehicles : []) {
-    seen.add(v.vehicle_id);
-    const target: [number, number] = [v.lon, v.lat];
-    const t = tracks.get(v.vehicle_id);
-    if (!t) {
-      tracks.set(v.vehicle_id, { from: target, to: target, t0: now, item: v, hist: [] });
-    } else {
-      const cur = interpolated(t, now);
-      const jump = Math.hypot((target[0] - cur[0]) * 111320 * Math.cos((cur[1] * Math.PI) / 180), (target[1] - cur[1]) * 111320);
-      t.from = jump > 1500 ? target : cur; // a trip replay restarting: snap, don't glide across the county
-      if (jump > 1500) t.hist = [];
-      t.to = target;
-      t.t0 = now;
-      t.item = v;
-    }
-  }
-  for (const id of Array.from(tracks.keys())) if (!seen.has(id)) tracks.delete(id);
-  vehicleFrameSig.delete(map);
-}
-
-function interpolated(t: VehicleTrack, now: number): [number, number] {
-  const k = Math.min(1, (now - t.t0) / LERP_MS);
-  const e = k < 1 ? 1 - Math.pow(1 - k, 2) : 1;
-  return [t.from[0] + (t.to[0] - t.from[0]) * e, t.from[1] + (t.to[1] - t.from[1]) * e];
-}
-
-/** Where to draw a vehicle. Parked vehicles sit 35 m short of the incident on
- * the road; when the map is zoomed out that is under the case pin, so they
- * are pushed back along their approach by a screen-space distance instead. */
-function displayPos(t: VehicleTrack, now: number, map: MLMap): [number, number] {
-  const [lon, lat] = interpolated(t, now);
-  const v = t.item;
-  if (v.status !== "on_site") return [lon, lat];
-  const slot = Number(v.vehicle_id.split(":").pop()) || 1;
-  const mpp = (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (512 * Math.pow(2, map.getZoom()));
-  const wantPx = 22 + 11 * (slot - 1);
-  const extra = Math.max(0, wantPx * mpp - 35 - 14 * (slot - 1));
-  if (extra <= 0) return [lon, lat];
-  const back = (((v.heading || 0) + 180) * Math.PI) / 180;
-  const dN = extra * Math.cos(back);
-  const dE = extra * Math.sin(back);
-  return [lon + dE / (111320 * Math.cos((lat * Math.PI) / 180)), lat + dN / 111320];
-}
-
-/** Push the current interpolated positions into the symbol source. */
-const vehicleFrameSig = new WeakMap<MLMap, string>();
-const trailClock = new WeakMap<MLMap, number>();
-
-function vehicleFrame(map: MLMap, now: number): void {
-  const tracks = vehicleTracks.get(map);
-  const src = map.getSource("af-vehicles") as maplibregl.GeoJSONSource | undefined;
-  if (!tracks || !src) return;
-  // only repaint when something can actually change: a vehicle still
-  // interpolating, or the light bar of a moving vehicle toggling
-  let live = false;
-  for (const t of tracks.values()) {
-    if (now - t.t0 < LERP_MS) live = true;
-  }
-  const sig = `${tracks.size}:${live ? now : "idle"}:${map.getZoom().toFixed(2)}`;
-  if (vehicleFrameSig.get(map) === sig) return;
-  vehicleFrameSig.set(map, sig);
-  const features: GeoJSON.Feature[] = [];
-  const trails: GeoJSON.Feature[] = [];
-  const zoomNow = map.getZoom();
-  for (const t of tracks.values()) {
-    const v = t.item;
-    const moving = v.status === "en_route" || v.status === "returning" || v.status === "live";
-    if (!moving && zoomNow < 11) continue; // parked at the incident: implied by the beacon at this scale
-    const icon = `veh-${VEHICLE_KINDS.includes(v.kind) ? v.kind : "works_truck"}${moving ? "" : "-dim"}`;
-    const pos = displayPos(t, now, map);
-    // tail: remember where it was drawn, drop points older than TRAIL_MS
-    const last = t.hist[t.hist.length - 1];
-    if (moving && (!last || Math.hypot((pos[0] - last[0]) * 111320 * Math.cos((pos[1] * Math.PI) / 180), (pos[1] - last[1]) * 111320) > 4)) {
-      t.hist.push([pos[0], pos[1], now]);
-    }
-    while (t.hist.length && now - t.hist[0][2] > TRAIL_MS) t.hist.shift();
-    if (t.hist.length >= 2) {
-      trails.push({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: [...t.hist.map(([x, y]) => [x, y]), ...(moving ? [pos] : [])] },
-        properties: { kind: VEHICLE_KINDS.includes(v.kind) ? v.kind : "works_truck" },
-      });
-    }
-    features.push({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: pos },
-      properties: {
-        ...v, id: v.vehicle_id, icon, heading: v.heading || 0, tag: vehicleTag(v),
-        color: VEHICLE_HEX[v.kind] || "#475467", moving: moving ? 1 : 0, blink: moving ? 1 : 0,
-      },
-    });
-  }
-  src.setData({ type: "FeatureCollection", features });
-  // trails are a line layer: under 3D terrain every update re-bakes the tiles
-  // they cross, so refresh them once a second and never while the user is dragging
-  const lastTrail = trailClock.get(map) || 0;
-  if (!map.isMoving() && now - lastTrail > 1000) {
-    trailClock.set(map, now);
-    (map.getSource("af-veh-trails") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: trails });
-  }
-}
 
 // ── upright pins (DOM markers: always face the camera, tip on the terrain) ──
 const pinStore = new WeakMap<MLMap, Map<string, maplibregl.Marker>>();
@@ -663,11 +381,10 @@ function TerrainMapImpl({
   onSelect,
   timeCutoff = null,
   threeD = true,
-  routes = [],
-  vehicles = [],
   fitToData = false,
   orbit = false,
   minimal = false,
+  padLeft = 0,
   fitPadding,
   className = "",
   onReady,
@@ -692,17 +409,15 @@ function TerrainMapImpl({
   const [zoomBucket, setZoomBucket] = useState(zoom);
   const [ready, setReady] = useState(false);
   const built = useMemo(() => buildInternal(features, visible, enabledLayers, timeCutoff, selectedId, zoomBucket), [features, visible, enabledLayers, timeCutoff, selectedId, zoomBucket]);
-  const routesFC = useMemo<GeoJSON.FeatureCollection>(() => ({
-    type: "FeatureCollection",
-    features: (visible.dispatch === true ? routes : []).map((r) => ({
-      type: "Feature",
-      id: r.id,
-      geometry: r.geometry,
-      properties: { ...r.properties, color: UNIT_KIND_HEX[r.properties.unit_kind || ""] || "#475467", selected: selectedId === `case:${r.properties.case_id}` ? 1 : 0 },
-    })),
-  }), [routes, visible, selectedId]);
-
   // ── init ────────────────────────────────────────────────────────────
+  // the hero card covers the left of the viewport: tell the camera to ignore
+  // that strip so the subject stays in the visible half at any window width
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setPadding({ top: 0, right: 0, bottom: 0, left: padLeft });
+  }, [padLeft]);
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
@@ -729,6 +444,7 @@ function TerrainMapImpl({
     map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: BASEMAP_ATTRIBUTION }), "bottom-right");
     if (!minimal) map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showCompass: true }), "bottom-right");
     mapRef.current = map;
+    if (padLeft > 0) map.setPadding({ top: 0, right: 0, bottom: 0, left: padLeft });
     if (process.env.NODE_ENV !== "production") (window as any).__aidflowMap = map; // dev-only debugging hook
 
     map.on("style.load", () => {
@@ -753,8 +469,7 @@ function TerrainMapImpl({
       }
 
       const src = (id: string) => map.addSource(id, { type: "geojson", data: EMPTY });
-      ["af-heat", "af-reports", "af-clusters", "af-case-pts", "af-arcs", "af-vehicles"].forEach(src);
-      map.addSource("af-veh-trails", { type: "geojson", data: EMPTY, lineMetrics: true });
+      ["af-heat", "af-reports", "af-clusters", "af-case-pts"].forEach(src);
       OFFICIAL_KEYS.forEach((k) => {
         src(`af-off-${k}-pts`);
         src(`af-off-${k}-polys`);
@@ -770,11 +485,6 @@ function TerrainMapImpl({
         ...OFFICIAL_KEYS.map<LayerSpecification>((k) => ({ id: `af-off-${k}-lines-glow`, type: "line", source: `af-off-${k}-lines`, filter: ["==", ["get", "alerted"], 1], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["+", ["get", "width"], 7], "line-opacity": 0.22, "line-blur": 2 } })),
         ...OFFICIAL_KEYS.map<LayerSpecification>((k) => ({ id: `af-off-${k}-lines`, type: "line", source: `af-off-${k}-lines`, layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["interpolate", ["linear"], ["zoom"], 9, ["*", ["get", "width"], 0.7], 13, ["get", "width"], 16, ["*", ["get", "width"], 1.8]], "line-opacity": ["interpolate", ["linear"], ["zoom"], 10.5, ["case", ["==", ["get", "alerted"], 1], 0.95, 0], 12.5, ["case", ["==", ["get", "alerted"], 1], 0.95, 0.8]] } })),
         { id: "af-off-rainfall-cols", type: "fill-extrusion", source: "af-off-rainfall-cols", paint: { "fill-extrusion-color": ["get", "color"], "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 8, ["*", ["get", "height"], 10], 12, ["*", ["get", "height"], 2], 14, ["get", "height"]], "fill-extrusion-base": 0, "fill-extrusion-opacity": 0.7 } },
-        // dispatch arcs
-        // dispatch routes (real road geometry), coloured by the responding unit kind
-        { id: "af-arcs-halo", type: "line", source: "af-arcs", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": ["case", ["==", ["get", "selected"], 1], 8, 6], "line-opacity": 0.85 } },
-        { id: "af-arcs-base", type: "line", source: "af-arcs", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["case", ["==", ["get", "selected"], 1], 4, 3], "line-opacity": 0.35 } },
-        { id: "af-arcs", type: "line", source: "af-arcs", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": ["case", ["==", ["get", "selected"], 1], 4, 3], "line-opacity": 0.95, "line-dasharray": [0, 2, 2] } },
         // citizen reports
         { id: "af-reports", type: "circle", source: "af-reports", paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 3, 14, 6], "circle-color": ["get", "color"], "circle-opacity": 0.85, "circle-stroke-color": "#ffffff", "circle-stroke-width": 1 } },
         // clusters below threshold: hollow rings + count
@@ -802,21 +512,13 @@ function TerrainMapImpl({
         }
       }
       layers.forEach((l) => map.addLayer(l));
-      loadVehicleIcons(map).then(() => {
-        if (!map.getLayer("af-vehicles") && map.getSource("af-vehicles")) {
-          vehicleTrailLayers().forEach((l) => map.addLayer(l));
-          map.addLayer(vehicleHaloLayer());
-          map.addLayer(vehicleLayer(font));
-        }
-      });
-
       // interaction
-      const interactive = ["af-vehicles", "af-vehicle-halo", "af-case-disc", "af-clusters", "af-reports", ...OFFICIAL_KEYS.map((k) => `af-off-${k}-pts`), ...OFFICIAL_KEYS.map((k) => `af-off-${k}-polys`), ...OFFICIAL_KEYS.map((k) => `af-off-${k}-lines`), "af-off-rainfall-cols"];
+      const interactive = ["af-case-disc", "af-clusters", "af-reports", ...OFFICIAL_KEYS.map((k) => `af-off-${k}-pts`), ...OFFICIAL_KEYS.map((k) => `af-off-${k}-polys`), ...OFFICIAL_KEYS.map((k) => `af-off-${k}-lines`), "af-off-rainfall-cols"];
       for (const id of interactive) {
         map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
       }
-      map.on("click", (e) => {
+      map.on("click", (e: maplibregl.MapMouseEvent) => {
         const hits = map.queryRenderedFeatures(e.point, { layers: interactive.filter((id) => !!map.getLayer(id)) });
         const hit = hits[0];
         popupRef.current?.remove();
@@ -827,17 +529,6 @@ function TerrainMapImpl({
         const props = hit.properties as Record<string, any>;
         let html = "";
         let picked: MapFeature | GeoFeature | null = null;
-        if (hit.layer.id === "af-vehicles" || hit.layer.id === "af-vehicle-halo") {
-          // a vehicle: show its card where it is, don't move the camera
-          const track = vehicleTracks.get(map)?.get(String(props.id));
-          if (track) {
-            popupRef.current = new maplibregl.Popup({ closeButton: false, maxWidth: "300px", offset: 18 })
-              .setLngLat(displayPos(track, performance.now(), map))
-              .setHTML(vehiclePopup(track.item))
-              .addTo(map);
-          }
-          return;
-        }
         if (hit.layer.id.startsWith("af-case")) {
           picked = featuresRef.current.find((f) => f.id === props.id) || null;
           onSelectRef.current?.(picked);
@@ -859,7 +550,7 @@ function TerrainMapImpl({
         onSelectRef.current?.(picked);
       });
 
-      map.getContainer().addEventListener("af-pin-click", (ev) => {
+      map.getContainer().addEventListener("af-pin-click", (ev: Event) => {
         const id = (ev as CustomEvent<string>).detail;
         popupRef.current?.remove();
         onSelectRef.current?.(featuresRef.current.find((f) => f.id === id) || null);
@@ -873,31 +564,22 @@ function TerrainMapImpl({
       const canvas = map.getCanvasContainer();
       ["mousedown", "wheel", "touchstart"].forEach((ev) => canvas.addEventListener(ev, pauseOrbit, { passive: true }));
 
-      // pulse animation for critical cases + marching arcs
-      let t0 = performance.now();
-      let lastVeh = 0;
-      let lastPhase = -1;
-      let lastTick = t0;
+      // camera orbit + radar replay
+      let lastRadar = 0;
+      let lastTick = performance.now();
       const tick = (now: number) => {
         const dt = Math.min(100, now - lastTick);
         lastTick = now;
-        if (orbitRef.current && threeDRef.current && !REDUCED_MOTION && now > orbitPausedUntil && !map.isEasing()) {
+        // isMoving() covers the v5 isEasing() case plus an in-progress gesture
+        if (orbitRef.current && threeDRef.current && !REDUCED_MOTION && now > orbitPausedUntil && !map.isMoving()) {
           map.setBearing(map.getBearing() + 0.0012 * dt); // ≈ 1.2°/s, one lap in ~5 min
         }
         // while the user drags / zooms, nothing that re-bakes terrain tiles may
         // run: the gesture gets the whole frame budget. The ground pulse is
         // static under terrain (the beacon ring already pulses in CSS).
         const gesture = map.isMoving();
-        if (!gesture && routesRef.current > 0 && map.getLayer("af-arcs")) {
-          const phase = Math.floor(((now - t0) / 220) % 4);
-          if (phase !== lastPhase) {
-            lastPhase = phase;
-            map.setPaintProperty("af-arcs", "line-dasharray", [[0, 2, 2], [0.5, 2, 1.5], [1, 2, 1], [1.5, 2, 0.5]][phase]);
-          }
-        }
-        if (now - lastVeh > 100) {
-          lastVeh = now;
-          vehicleFrame(map, now);
+        if (now - lastRadar > 100) {
+          lastRadar = now;
           if (!gesture) radarTick(map, now);
         }
         rafRef.current = requestAnimationFrame(tick);
@@ -932,7 +614,6 @@ function TerrainMapImpl({
 
   // ── data ────────────────────────────────────────────────────────────
   const pulseRef = useRef(0);
-  const routesRef = useRef(0);
   const setSrc = (map: MLMap, id: string, data: GeoJSON.FeatureCollection) => (map.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(data);
 
   const applyInternal = () => {
@@ -942,10 +623,8 @@ function TerrainMapImpl({
     setSrc(map, "af-reports", built.reports);
     setSrc(map, "af-clusters", built.clusters);
     setSrc(map, "af-case-pts", built.casePts);
-    setSrc(map, "af-arcs", routesFC);
     syncPins(map, built.casePts);
     pulseRef.current = built.casePts.features.filter((f) => (f.properties as any)?.pulse === 1).length;
-    routesRef.current = routesFC.features.length;
   };
   const applyOfficial = () => {
     const map = mapRef.current;
@@ -962,16 +641,9 @@ function TerrainMapImpl({
     const radarOn = visible.radar === true && enabledLayers.includes("radar");
     syncRadar(map, radarOn ? officialToGeoJSON(officialLayers.radar, zoomBucket).rasters : [], radarOn);
   };
-  const applyVehicles = () => {
-    const map = mapRef.current;
-    if (!map || !readyRef.current) return;
-    updateVehicleTracks(map, vehicles, visible.dispatch === true, performance.now());
-    vehicleFrame(map, performance.now());
-  };
   const applyData = () => {
     applyInternal();
     applyOfficial();
-    applyVehicles();
   };
   const applyVisibility = () => {
     const map = mapRef.current;
@@ -984,15 +656,11 @@ function TerrainMapImpl({
   useEffect(() => {
     applyInternal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [built, routesFC, ready]);
+  }, [built, ready]);
   useEffect(() => {
     applyOfficial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officialLayers, visible, enabledLayers, zoomBucket, ready]);
-  useEffect(() => {
-    applyVehicles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicles, visible.dispatch, ready]);
   useEffect(() => {
     applyVisibility();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1065,7 +733,7 @@ function TerrainMapImpl({
         <div className="af-map-loading-card">
           <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0b2545" /><path d="M6 24c3-2.2 5-2.2 8 0s5 2.2 8 0 4-2 4-2" fill="none" stroke="#fff" strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" /><path d="M16 21V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" /><circle cx="16" cy="9.5" r="4.2" fill="#fff" /><circle cx="16" cy="21.5" r="1.4" fill="#fff" /></svg>
           <div>
-            <div className="text-[13px] font-semibold text-[var(--ink)]">載入 3D 地形與即時資料</div>
+            <div className="text-[15px] font-semibold text-[var(--ink)]">載入 3D 地形與即時資料</div>
             <div className="af-map-loading-bar"><span /></div>
           </div>
         </div>

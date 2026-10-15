@@ -41,3 +41,12 @@ tsconfig.tsbuildinfo
 
 # Internal AI tooling config (never ship)
 .claude/
+
+# Uploaded citizen photos and cached upstream files (never commit, never ship)
+apps/api/media/
+
+# generated at build time from node_modules (scripts/copy-maplibre-worker.mjs)
+apps/web/public/maplibre-gl-worker.js
+
+# 給南投縣政府的開發設計規劃書與圖檔（交付文件，不隨程式碼發佈）
+docs/開發設計規劃書/

@@ -1,10 +1,13 @@
 "use client";
 
+// 政府管理後台 landing: every disaster platform with its review backlog.
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import ConsoleShell from "@/components/ConsoleShell";
 import { EmptyState, ErrorBox, Kpi, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useMe } from "@/lib/auth";
 import { fmtTime } from "@/lib/format";
 import { HAZARD_LABEL } from "@/lib/labels";
 import type { GlobalOverview, PlatformItem } from "@/lib/types";
@@ -12,6 +15,7 @@ import type { GlobalOverview, PlatformItem } from "@/lib/types";
 const STATUS_LABEL: Record<string, string> = { draft: "草稿", published: "已發布", archived: "已封存" };
 
 export default function ConsoleHome() {
+  const { can } = useMe();
   const [items, setItems] = useState<PlatformItem[] | null>(null);
   const [overview, setOverview] = useState<GlobalOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,124 +46,130 @@ export default function ConsoleHome() {
     }
   }
 
-  async function seed() {
-    setBusy("seed");
-    try {
-      await api.seedDemo(false);
-      load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
+  const admin = can("manage_platforms");
 
   return (
-    <ConsoleShell title="平台管理" crumbs={[{ href: "/", label: "系統控制台" }, { label: "平台管理" }]}>
+    <ConsoleShell title="災害平台" crumbs={[{ label: "政府管理後台" }]}>
       {error ? (
         <div className="mb-3">
           <ErrorBox message={error} onRetry={load} />
         </div>
       ) : null}
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-6">
+      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
         {overview ? (
           <>
-            <Kpi value={overview.platforms_published} label="運作中的災情平台" hint={`共 ${overview.platforms_total} 個`} />
-            <Kpi value={overview.cases_open} label="進行中案件" />
-            <Kpi value={overview.cases_awaiting_dispatch} label="待派工" tone="pending" />
-            <Kpi value={overview.cases_active} label="處理中" tone="active" />
+            <Kpi value={overview.cases_pending_review} label="待審核" tone="pending" hint="需承辦決定處理方式" />
+            <Kpi value={overview.cases_active} label="EMIC 處理中" tone="active" />
+            <Kpi value={overview.cases_community} label="民眾協助中" tone="community" />
             <Kpi value={overview.reports_last_24h} label="24 小時通報" />
-            <div className="af-kpi flex flex-col justify-center gap-1.5">
-              <Link href="/console/new" className="af-btn af-btn-primary w-full text-xs">
-                建立新平台
-              </Link>
-              <button type="button" className="af-btn af-btn-secondary w-full text-xs" onClick={seed} disabled={busy === "seed"}>
-                {busy === "seed" ? "建立中…" : "載入示範情境"}
-              </button>
-              <button
-                type="button"
-                className="af-btn af-btn-ghost w-full text-xs"
-                disabled={busy === "prune"}
-                title="刪除所有由生成器建立的平台，只保留內建的南投示範平台"
-                onClick={async () => {
-                  if (!window.confirm("清除所有生成的平台？內建的南投示範平台會保留。")) return;
-                  setBusy("prune");
-                  try {
-                    const r = await api.prunePlatforms(0);
-                    setError(r.count ? null : "沒有可清除的平台");
-                    load();
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                {busy === "prune" ? "清除中…" : "清除生成的平台"}
-              </button>
-            </div>
+            <Kpi value={overview.platforms_published} label="運作中的平台" hint={`共 ${overview.platforms_total} 個`} />
           </>
         ) : (
-          [0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-[68px]" />)
+          [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[84px]" />)
         )}
       </div>
+
+      {admin ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Link href="/console/new" className="af-btn af-btn-primary">
+            建立災害平台
+          </Link>
+          <button
+            type="button"
+            className="af-btn af-btn-secondary"
+            disabled={busy === "seed"}
+            onClick={async () => {
+              setBusy("seed");
+              try {
+                await api.seedDemo(false);
+                load();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(null);
+              }
+            }}
+          >
+            {busy === "seed" ? "建立中…" : "載入南投示範情境"}
+          </button>
+          <button
+            type="button"
+            className="af-btn af-btn-ghost"
+            disabled={busy === "prune"}
+            title="刪除所有建立的平台，只保留內建的南投示範平台（示範模式）"
+            onClick={async () => {
+              if (!window.confirm("清除所有建立的平台？內建的南投示範平台會保留。")) return;
+              setBusy("prune");
+              try {
+                const r = await api.prunePlatforms(0);
+                setError(r.count ? null : "沒有可清除的平台");
+                load();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(null);
+              }
+            }}
+          >
+            {busy === "prune" ? "清除中…" : "清除示範用平台"}
+          </button>
+        </div>
+      ) : null}
 
       {items === null ? (
         <Skeleton className="h-48" />
       ) : items.length === 0 ? (
-        <EmptyState title="尚未建立任何平台" detail="輸入災害背景描述，系統會分析情境、建議模組與圖層，經確認後生成公開災情網站與管理後台。" action={<Link href="/console/new" className="af-btn af-btn-primary">建立第一個平台</Link>} />
+        <EmptyState title="尚未建立任何災害平台" detail="系統管理者輸入災害名稱並選擇災害類型，即可建立民眾通報網站與政府管理後台。" action={admin ? <Link href="/console/new" className="af-btn af-btn-primary">建立第一個平台</Link> : undefined} />
       ) : (
         <div className="af-panel overflow-x-auto">
           <table className="af-table min-w-[860px]">
             <thead>
               <tr>
-                <th>平台</th>
+                <th>災害平台</th>
                 <th>地區</th>
-                <th>災害</th>
-                <th>模組／圖層</th>
+                <th>災害類型</th>
                 <th>狀態</th>
                 <th>建立時間</th>
-                <th className="text-right">生成的兩套系統</th>
+                <th className="text-right">入口</th>
               </tr>
             </thead>
             <tbody>
               {items.map((p) => (
                 <tr key={p.id} className="af-row-hover">
                   <td>
-                    <Link href={`/console/platforms/${p.id}`} className="font-medium text-[var(--ink)] hover:underline">
+                    <Link href={`/console/platforms/${p.id}`} className="text-[17px] font-semibold text-[var(--ink)] hover:underline">
                       {p.name}
                     </Link>
-                    <div className="font-mono text-[11px] text-[var(--muted)]">/p/{p.slug}</div>
+                    <div className="font-mono text-[13px] text-[var(--muted)]">/p/{p.slug}</div>
                   </td>
-                  <td className="text-xs text-[var(--ink-2)]">
+                  <td className="text-sm text-[var(--ink-2)]">
                     {p.county || "—"}
                     <div className="text-[var(--muted)]">{p.towns.join("、") || "全縣"}</div>
                   </td>
-                  <td className="text-xs text-[var(--ink-2)]">{p.hazards.map((h) => HAZARD_LABEL[h] || h).join("、")}</td>
-                  <td className="text-xs tabular-nums text-[var(--ink-2)]">
-                    {p.modules.length} / {p.layers.length}
-                  </td>
+                  <td className="text-sm text-[var(--ink-2)]">{p.hazards.map((h) => HAZARD_LABEL[h] || h).join("、")}</td>
                   <td>
                     <span className="af-chip">{STATUS_LABEL[p.status] || p.status}</span>
                   </td>
-                  <td className="text-xs text-[var(--muted)]">{fmtTime(p.created_at)}</td>
+                  <td className="text-sm text-[var(--muted)]">{fmtTime(p.created_at)}</td>
                   <td className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Link href={`/console/platforms/${p.id}`} className="af-btn af-btn-primary !py-1 text-xs" title="政府管理後台：案件佇列、派遣、官方情資">
-                        政府後台
+                    <div className="flex justify-end gap-1.5">
+                      <Link href={`/console/platforms/${p.id}`} className="af-btn af-btn-primary">
+                        進入後台
                       </Link>
-                      <a href={`/p/${p.slug}`} target="_blank" rel="noreferrer" className="af-btn af-btn-secondary !py-1 text-xs" title="民眾通報網站：態勢圖、通報、處理進度">
+                      <a href={`/p/${p.slug}`} target="_blank" rel="noreferrer" className="af-btn af-btn-secondary">
                         民眾網站 ↗
                       </a>
-                      {p.status === "published" ? (
-                        <button type="button" className="af-btn af-btn-ghost !py-1 text-xs" disabled={busy === p.id} onClick={() => setStatus(p.id, "draft")}>
-                          下架
-                        </button>
-                      ) : (
-                        <button type="button" className="af-btn af-btn-ghost !py-1 text-xs" disabled={busy === p.id} onClick={() => setStatus(p.id, "published")}>
-                          發布
-                        </button>
-                      )}
+                      {admin ? (
+                        p.status === "published" ? (
+                          <button type="button" className="af-btn af-btn-ghost" disabled={busy === p.id} onClick={() => setStatus(p.id, "draft")}>
+                            下架
+                          </button>
+                        ) : (
+                          <button type="button" className="af-btn af-btn-ghost" disabled={busy === p.id} onClick={() => setStatus(p.id, "published")}>
+                            發布
+                          </button>
+                        )
+                      ) : null}
                     </div>
                   </td>
                 </tr>

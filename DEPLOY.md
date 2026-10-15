@@ -34,9 +34,13 @@ git push origin main
 1. 登入 Render → **New +** → **Blueprint** → 選 本 repo。
 2. Render 會讀取 [render.yaml](./render.yaml)，自動建立
    `aidflow-api`（Docker web service）與 `aidflow-db`（免費 Postgres）。
-3. 建立時會問兩個環境變數（sync: false 的那兩個）：
+3. 建立時會問 `sync: false` 的環境變數：
    - `WEB_PUBLIC_BASE_URL`：先隨便填 `https://placeholder`（步驟 2 之後回來改）
-   - `OPENAI_API_KEY`：填你的金鑰（要 AI 助手/AI 草擬就填；不填也能跑）
+   - `API_PUBLIC_BASE_URL`：本服務網址（部署完成後回來填）
+   - `INITIAL_ADMIN_PASSWORD`：第一位系統管理者（帳號 `admin`）的初始密碼；登入後請自行變更密碼
+   - `LINE_CHANNEL_ACCESS_TOKEN`／`LINE_CHANNEL_SECRET`：要推播縣府 LINE 群組才填
+   - `AUTH_SECRET`、`DATA_ENCRYPTION_KEY`、`REPORTER_HASH_SALT` 由 Render 自動產生（`DATA_ENCRYPTION_KEY` 用來加密通報者聯絡資料，之後不要更換）
+   - `CORS_ORIGINS`：填前端實際網域（逗號分隔），不可用 `*`
 4. 按 **Apply**，等第一次部署完成（映像建置約 5-8 分鐘）。
 5. 記下服務網址，形如 `https://aidflow-api-xxxx.onrender.com`。
 6. 驗證：開 `https://<你的API網址>/v1/health` 應回 `{"status":"ok",...}`。
@@ -80,17 +84,18 @@ npx wrangler deploy
 ## 步驟 4：灌 Demo 資料 + 最終檢查
 
 ```bash
-# 建立四筆完整示範事件（事件、元件、通報、物資志工、派工）
-set API_BASE_URL=https://<你的API網址>
-set WEB_BASE_URL=https://<你的前端網址>
-python client/seed_demo.py
+# 南投豪雨示範情境：通報 → 聚合 → 成案 → 審核 → EMIC／民間處理
+API_BASE_URL=https://<你的API網址> WEB_BASE_URL=https://<你的前端網址> \
+ADMIN_USERNAME=admin ADMIN_PASSWORD=<變更後的管理者密碼> \
+bash client/seed_demo.sh
 ```
 
 Demo 前 checklist：
 - [ ] 前端首頁開得起來（Cloudflare URL）
-- [ ] `/console/agent` 跑一次「一句話 → 平行生成」全流程
-- [ ] 公開救災網站（成果卡「開啟救災網站」）地圖與資料正常
-- [ ] FB / LINE 後台開啟正常
+- [ ] 以 `admin` 登入 `/console`，變更初始密碼，建立承辦審核人員帳號
+- [ ] `/console/new` 輸入災害名稱建立平台
+- [ ] 民眾網站通報 → 後台「待審核」出現 → 上報 EMIC／民間可處理流程正常
+- [ ] LINE 群組綁定（有設定金鑰時）並發送測試訊息
 - [ ] 後端連續閒置 20 分鐘後再開仍秒回（防休眠有效）
 
 ## 疑難排解

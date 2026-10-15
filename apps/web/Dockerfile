@@ -12,6 +12,9 @@ COPY . .
 # pass the build arg only when you want a fixed API origin baked in.
 ARG NEXT_PUBLIC_API_BASE_URL=""
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# sites allowed to iframe /embed/{slug} (frame-ancestors); read by next.config.js at build
+ARG EMBED_ALLOWED_ORIGINS=""
+ENV EMBED_ALLOWED_ORIGINS=$EMBED_ALLOWED_ORIGINS
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_OUTPUT=standalone
 RUN npm run build

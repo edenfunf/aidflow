@@ -87,7 +87,7 @@ export default function LayerPanel({ enabledLayers, visible, onToggle, counts = 
               <div key={k}>
                 <Row keyName={k} on={visible[k] === true} onToggle={() => onToggle(k)} count={data?.count} detail={detail} disabled={st?.status === "disabled"} />
                 {unavailable && visible[k] !== false && (
-                  <div className="ml-6 -mt-0.5 mb-1 text-[10.5px] leading-snug text-[var(--faint)]">
+                  <div className="ml-6 -mt-0.5 mb-1 text-[12.5px] leading-snug text-[var(--faint)]">
                     {data?.status === "unavailable" ? "上游暫時無法取得" : "尚未設定資料來源金鑰"}
                   </div>
                 )}
@@ -107,7 +107,7 @@ export default function LayerPanel({ enabledLayers, visible, onToggle, counts = 
               </span>
             ))}
           </div>
-          <div className="mt-1.5 text-[10.5px] leading-snug text-[var(--faint)]">
+          <div className="mt-1.5 text-[12.5px] leading-snug text-[var(--faint)]">
             方塊＝正式案件（數字為回報人數）；虛線圓＝尚未成案的多人回報；小圓點＝單筆通報。
           </div>
         </section>

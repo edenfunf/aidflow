@@ -23,7 +23,7 @@ export default function PhotoStrip({ photos, emptyText = "尚無現場照片" }:
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={api.mediaUrl(p.url)} alt={p.caption || KIND_LABEL[p.kind]} className="h-28 w-full object-cover" loading="lazy" />
           </a>
-          <figcaption className="mt-1 text-[10.5px] leading-snug text-[var(--muted)]">
+          <figcaption className="mt-1 text-[12.5px] leading-snug text-[var(--muted)]">
             <span className="font-medium text-[var(--ink-2)]">{KIND_LABEL[p.kind]}</span> · {SOURCE_LABEL[p.source]}
             <br />
             {fmtTime(p.created_at)}

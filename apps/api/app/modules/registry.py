@@ -1,4 +1,4 @@
-"""In-memory module registry — the planner/console capability catalogue.
+"""In-memory module registry — the composer/console capability catalogue.
 
 Registration order is preserved (dict insertion order), so listings and the
 composed platform configuration are stable and predictable.

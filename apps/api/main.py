@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hmac
 import logging
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -13,22 +11,33 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.db.database import SessionLocal
-from app.routers import agent, avl, cases, demo, health, modules, platforms, public
-from app.services import platform_service
+from app.routers import auth, cases, demo, health, line, modules, platforms, public
+from app.services import auth_service, platform_service
 
 logger = logging.getLogger("aidflow")
 
+_problems = settings.startup_problems()
+if _problems:
+    raise RuntimeError(
+        "不安全的部署設定，已停止啟動（ENVIRONMENT=" + settings.ENVIRONMENT + "）：\n  - "
+        + "\n  - ".join(_problems)
+    )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """A fresh start shows a clean workspace, not yesterday's experiments."""
-    if settings.DEMO_MODE:
-        try:
-            with SessionLocal() as db:
+    try:
+        with SessionLocal() as db:
+            created = auth_service.bootstrap_admin(db)
+            if created:
+                logger.info("created initial administrator account '%s' (must change password)", created.username)
+            if settings.DEMO_MODE:
+                # a fresh start shows a clean workspace, not yesterday's experiments
                 removed = platform_service.prune_generated(db)
-            if removed:
-                logging.getLogger("aidflow").info("retired %d generated platform(s): %s", len(removed), ", ".join(removed))
-        except Exception as exc:  # noqa: BLE001 — never block startup on housekeeping
-            logging.getLogger("aidflow").warning("platform housekeeping skipped: %s", exc)
+                if removed:
+                    logger.info("retired %d generated platform(s): %s", len(removed), ", ".join(removed))
+    except Exception as exc:  # noqa: BLE001 — never block startup on housekeeping
+        logger.warning("startup housekeeping skipped: %s", exc)
     yield
 
 
@@ -36,9 +45,13 @@ app = FastAPI(
     lifespan=lifespan,
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    # the interactive API browser is a development aid, not a public surface
+    docs_url="/docs" if settings.is_development else None,
+    redoc_url="/redoc" if settings.is_development else None,
+    openapi_url="/openapi.json" if settings.is_development else None,
     description=(
-        "AidFlow — 災害情境驅動的災情通報、案件處理、派工與視覺化平台生成器。"
-        "公開端點位於 /v1/public；其餘為政府後台端點。"
+        "AidFlow 災情通報與處理平台：民眾通報 → 同地點聚合 → 承辦審核（上報 EMIC／民間可處理）→ "
+        "處理進度公開。公開端點位於 /v1/public（免登入）；其餘為政府管理後台端點，需登入並依角色授權。"
     ),
 )
 
@@ -51,34 +64,34 @@ app.add_middleware(
     max_age=86400,
 )
 
-# Everything the citizen-facing portal needs lives under /v1/public and stays
-# open; every other route (planner, platform management, case queue, dispatch,
-# internal reports with PII, demo seeding) requires X-API-Key when
-# ADMIN_API_KEY is configured.
-_PUBLIC_PREFIXES = ("/v1/health", "/v1/public/", "/docs", "/openapi.json", "/redoc")
-
-
-def _is_public(path: str) -> bool:
-    return path == "/" or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
-
 
 @app.middleware("http")
-async def api_key_gate(request: Request, call_next):
-    if settings.ADMIN_API_KEY and request.method != "OPTIONS" and not _is_public(request.url.path):
-        provided = request.headers.get("X-API-Key", "")
-        if not hmac.compare_digest(provided, settings.ADMIN_API_KEY):
-            return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key."})
-    return await call_next(request)
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # the API serves JSON and stored photos only — never frame it, never run scripts from it
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'none'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    )
+    if request.url.path.startswith("/v1/") and not request.url.path.startswith("/v1/public/media"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 app.include_router(health.router)
 app.include_router(public.router)
-app.include_router(agent.router)
+app.include_router(auth.router)
 app.include_router(modules.router)
 app.include_router(platforms.router)
 app.include_router(cases.router)
 app.include_router(demo.router)
-app.include_router(avl.router)
+app.include_router(line.router)
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -92,14 +105,20 @@ def _custom_openapi() -> dict:
         return app.openapi_schema
     schema = get_openapi(title=app.title, version=app.version, description=app.description, routes=app.routes)
     schema.setdefault("components", {})["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "POST /v1/auth/login 取得權杖。/v1/public、/v1/health 與 /v1/line/webhook 免登入。",
+        },
         "ApiKeyAuth": {
             "type": "apiKey",
             "in": "header",
             "name": "X-API-Key",
-            "description": "設定 ADMIN_API_KEY 後，/v1/public 與 /v1/health 以外的端點需帶此標頭。",
-        }
+            "description": "系統服務金鑰（ADMIN_API_KEY），供排程或整合程式使用。",
+        },
     }
-    schema["security"] = [{"ApiKeyAuth": []}]
+    schema["security"] = [{"BearerAuth": []}, {"ApiKeyAuth": []}]
     app.openapi_schema = schema
     return app.openapi_schema
 
@@ -109,4 +128,4 @@ app.openapi = _custom_openapi  # type: ignore[method-assign]
 
 @app.get("/", include_in_schema=False)
 def root() -> dict:
-    return {"service": "aidflow-api", "version": settings.APP_VERSION, "docs": "/docs", "health": "/v1/health"}
+    return {"service": "aidflow-api", "health": "/v1/health"}
