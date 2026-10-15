@@ -728,14 +728,15 @@
 .af-rise {
   animation: afRise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
+/* opacity only on purpose: a transform here (even the identity matrix the
+   animation leaves behind) makes this element the containing block for
+   position: fixed, which broke the sticky submit bars on phones */
 @keyframes afPageIn {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 @keyframes afRise {
@@ -813,6 +814,25 @@ a.af-panel:hover,
   .af-rise,
   .af-map-loading-bar > span {
     animation: none !important;
+  }
+}
+
+/* console KPI strip: fixed-width cards that swipe on a phone, grid from md up */
+.af-kpi-row > * {
+  flex: 0 0 150px;
+  scroll-snap-align: start;
+}
+@media (min-width: 768px) {
+  .af-kpi-row > * {
+    flex: initial;
+  }
+}
+
+/* map controls are finger targets on a phone */
+@media (max-width: 1023px) {
+  .maplibregl-ctrl-group button {
+    width: 38px;
+    height: 38px;
   }
 }
 

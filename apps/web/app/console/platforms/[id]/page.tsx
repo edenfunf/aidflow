@@ -268,7 +268,7 @@ export default function PlatformConsolePage() {
       </div>
 
       {/* severity tiers first: what matters most is what is most severe */}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="af-kpi-row mb-4 flex gap-3 overflow-x-auto pb-1 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-6">
         {overview ? (
           <>
             {SEVERITY_ORDER.map((s) => (

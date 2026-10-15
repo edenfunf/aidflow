@@ -93,7 +93,7 @@ export default function HomePage() {
             <h1 className="text-[30px] font-bold leading-tight text-[var(--ink)] sm:text-[36px]">看到災情，馬上通報</h1>
             <p className="mt-2 text-[17px] leading-relaxed text-[var(--ink-2)] sm:text-[18px]">免登入、免註冊。通報會即時通知縣府承辦人員，您可以在災情地圖上追蹤處理進度。</p>
             <p className="mt-3 rounded-md border px-3 py-2 text-[16px] font-medium" style={{ borderColor: "#fecdca", background: "#fef3f2", color: "#b42318" }}>
-              危及生命請先撥打 <a href="tel:119" className="underline">119</a>
+              危及生命請先撥打 <a href="tel:119" className="-my-1 inline-block px-1 py-1 font-bold underline">119</a>
             </p>
             {featured ? (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -164,7 +164,7 @@ export default function HomePage() {
 
       <footer className="border-t" style={{ background: "var(--surface)", borderColor: "var(--line)" }}>
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-5 text-[14px] text-[var(--muted)]">
-          <span>消防救護 <a href="tel:119" className="font-semibold text-[var(--ink-2)]">119</a></span>
+          <span>消防救護 <a href="tel:119" className="-my-1 inline-block px-1 py-1 font-semibold text-[var(--ink-2)]">119</a></span>
           <span>警察 <a href="tel:110" className="font-semibold text-[var(--ink-2)]">110</a></span>
           <span className="ml-auto">本站資訊以各主管機關正式公告為準。公開內容已去識別化。</span>
           <Link href="/login" className="text-[var(--focus)] hover:underline">

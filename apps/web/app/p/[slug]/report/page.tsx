@@ -190,7 +190,7 @@ export default function ReportPage() {
         <div className="mb-4">
           <h1 className="text-[28px] font-bold leading-tight text-[var(--ink)]">我要通報災情</h1>
           <p className="mt-2 rounded-md border px-3 py-2 text-[16px] font-medium" style={{ borderColor: "#fecdca", background: "#fef3f2", color: "#b42318" }}>
-            危及生命請先撥打 <a href="tel:119" className="underline">119</a>。
+            危及生命請先撥打 <a href="tel:119" className="-my-1 inline-block px-1 py-1 font-bold underline">119</a>。
           </p>
           <p className="mt-2 text-[15px] text-[var(--muted)]">免登入、免註冊。承辦人員收到通報後會審核處理方式。</p>
         </div>

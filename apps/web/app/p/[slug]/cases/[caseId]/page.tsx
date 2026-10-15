@@ -187,7 +187,7 @@ export default function PortalCasePage() {
       ) : (
         <>
           <div className="af-panel mb-3 overflow-hidden">
-            <div className="relative h-[240px] sm:h-[300px]">
+            <div className="relative h-[180px] sm:h-[300px]">
               <TerrainMap center={[c.lat, c.lon]} zoom={13.6} features={feature} visible={mapVisible} enabledLayers={["incident_cases", "debris_flow"]} officialLayers={ctxLayers} threeD minimal />
               <div className="pointer-events-none absolute bottom-2 right-3 text-[13px] text-[var(--ink-2)]">
                 <span className="rounded bg-white/85 px-1.5 py-0.5">位置已粗化至約 100 公尺</span>
@@ -256,8 +256,24 @@ export default function PortalCasePage() {
                 </div>
               ) : null}
 
+              {detail.can_assist && !assistDone && !assistOpen ? (
+                <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-[var(--bg)]/95 px-3 py-3 backdrop-blur sm:hidden" style={{ borderColor: "var(--line)" }}>
+                  <button
+                    type="button"
+                    className="af-btn af-btn-lg w-full !py-4 !text-[19px] font-bold text-white"
+                    style={{ background: "var(--st-community)" }}
+                    onClick={() => {
+                      setAssistOpen(true);
+                      requestAnimationFrame(() => document.getElementById("assist")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+                    }}
+                  >
+                    我來協助處理
+                  </button>
+                </div>
+              ) : null}
+
               {detail.can_assist && !assistDone ? (
-                <div id="assist" className="mt-5">
+                <div id="assist" className={`mt-5 ${assistOpen ? "" : "hidden sm:block"}`}>
                   {!assistOpen ? (
                     <button type="button" className="af-btn af-btn-lg w-full !py-4 !text-[20px] font-bold text-white" style={{ background: "var(--st-community)" }} onClick={() => setAssistOpen(true)}>
                       我來協助處理
@@ -341,6 +357,8 @@ export default function PortalCasePage() {
               </section>
             </div>
           </div>
+          {/* room for the docked 我來協助處理 bar on phones */}
+          {detail.can_assist && !assistDone && !assistOpen ? <div className="h-24 sm:hidden" /> : null}
         </>
       )}
     </PortalShell>
