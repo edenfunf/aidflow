@@ -66,7 +66,7 @@ export default function UsersPage() {
       ) : null}
       {notice ? <div className="mb-3 rounded-md bg-[var(--surface-2)] px-4 py-2.5 text-[16px] text-[var(--ink-2)]">{notice}</div> : null}
       <div className="grid gap-4 xl:grid-cols-12">
-        <section className="af-panel p-5 xl:col-span-4">
+        <section className="af-panel min-w-0 p-5 xl:col-span-4">
           <h2 className="text-[19px] font-semibold text-[var(--ink)]">新增帳號</h2>
           <div className="mt-3 space-y-3">
             <label className="block">
@@ -115,7 +115,7 @@ export default function UsersPage() {
           </div>
         </section>
 
-        <section className="af-panel overflow-x-auto xl:col-span-8">
+        <section className="af-panel min-w-0 overflow-x-auto xl:col-span-8">
           {users === null ? (
             <Skeleton className="m-4 h-40" />
           ) : (

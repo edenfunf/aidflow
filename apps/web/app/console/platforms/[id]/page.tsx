@@ -9,7 +9,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConsoleShell from "@/components/ConsoleShell";
 import LayerPanel from "@/components/LayerPanel";
 import EventFeed from "@/components/EventFeed";
@@ -77,6 +77,14 @@ export default function PlatformConsolePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"clusters" | "reports" | "line" | "layers" | "policy" | "intel" | "feed">("clusters");
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [layerPanel, setLayerPanel] = useState(false);
+  // the LINE banner lives at the top of the page, the tabs far below it:
+  // switch and scroll, otherwise the click looks like it did nothing
+  const openTab = (next: typeof tab) => {
+    setTab(next);
+    requestAnimationFrame(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   const [busy, setBusy] = useState<string | null>(null);
   const [threeD, setThreeD] = useState(false);
 
@@ -256,7 +264,7 @@ export default function PlatformConsolePage() {
       </div>
 
       <div className="mb-4">
-        <LineStatusBanner status={line} onOpen={() => setTab("line")} />
+        <LineStatusBanner status={line} onOpen={() => openTab("line")} />
       </div>
 
       {/* severity tiers first: what matters most is what is most severe */}
@@ -284,7 +292,7 @@ export default function PlatformConsolePage() {
 
       <div className="grid gap-4 xl:grid-cols-12">
         {/* queue */}
-        <aside className="af-panel flex flex-col xl:order-2 xl:col-span-5">
+        <aside className="af-panel flex min-w-0 flex-col xl:order-2 xl:col-span-5">
           <div className="border-b p-3" style={{ borderColor: "var(--line)" }}>
             <div className="flex flex-wrap items-center gap-1.5">
               {QUEUE_TABS.map((t) => (
@@ -358,7 +366,7 @@ export default function PlatformConsolePage() {
         </aside>
 
         {/* map */}
-        <section className="af-panel relative overflow-hidden xl:order-1 xl:col-span-7">
+        <section className="af-panel relative min-w-0 overflow-hidden xl:order-1 xl:col-span-7">
           <div className="h-[560px] xl:h-[calc(100vh-240px)] xl:min-h-[620px]">
             {platform ? (
               <TerrainMap center={center} zoom={platform.configuration?.map?.zoom ?? 11} features={features} officialLayers={official} visible={visible} enabledLayers={layers} selectedId={selectedId} onSelect={onSelect} threeD={threeD} fitToData fitPadding={{ top: 80, bottom: 60, left: 260, right: 40 }} />
@@ -366,8 +374,12 @@ export default function PlatformConsolePage() {
               <Skeleton className="h-full w-full" />
             )}
           </div>
-          <div className="absolute left-2 top-2 z-[5] w-[240px]">
-            <div className="af-panel max-h-[620px] overflow-y-auto p-3 shadow-md">
+          <div className="absolute left-2 top-2 z-[5] w-[240px] max-w-[calc(100%-1rem)]">
+            {/* on a phone the panel would cover the map, so it folds away behind a toggle */}
+            <button type="button" onClick={() => setLayerPanel((v) => !v)} className="af-btn af-btn-secondary mb-1 w-full justify-center sm:hidden">
+              圖層與圖例 {layerPanel ? "▲" : "▼"}
+            </button>
+            <div className={`af-panel max-h-[620px] overflow-y-auto p-3 shadow-md ${layerPanel ? "" : "hidden sm:block"}`}>
               <div className="mb-2 flex items-center gap-1.5">
                 <button type="button" className={`af-hud-chip ${threeD ? "af-hud-chip-on" : ""}`} onClick={() => setThreeD((v) => !v)}>
                   {threeD ? "3D 地形" : "2D"}
@@ -400,8 +412,8 @@ export default function PlatformConsolePage() {
       </div>
 
       {/* lower section */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-12">
-        <section className="af-panel xl:col-span-8">
+      <div ref={tabsRef} className="mt-4 grid gap-4 xl:grid-cols-12">
+        <section className="af-panel min-w-0 xl:col-span-8">
           <div className="flex flex-wrap items-center gap-1 border-b px-2 py-2" style={{ borderColor: "var(--line)" }}>
             {(
               [
@@ -424,7 +436,8 @@ export default function PlatformConsolePage() {
               clusters.length === 0 ? (
                 <div className="p-5 text-[15px] text-[var(--muted)]">目前沒有尚未成案的回報地點。</div>
               ) : (
-                <table className="af-table">
+                <div className="overflow-x-auto">
+                <table className="af-table min-w-[640px]">
                   <thead>
                     <tr>
                       <th>災情</th>
@@ -458,10 +471,12 @@ export default function PlatformConsolePage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )
             ) : null}
             {tab === "reports" ? (
-              <table className="af-table">
+              <div className="overflow-x-auto">
+              <table className="af-table min-w-[720px]">
                 <thead>
                   <tr>
                     <th>時間</th>
@@ -511,6 +526,7 @@ export default function PlatformConsolePage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : null}
             {tab === "line" ? (
               <div className="p-4">
@@ -518,7 +534,8 @@ export default function PlatformConsolePage() {
               </div>
             ) : null}
             {tab === "layers" ? (
-              <table className="af-table">
+              <div className="overflow-x-auto">
+              <table className="af-table min-w-[560px]">
                 <thead>
                   <tr>
                     <th>圖層</th>
@@ -544,6 +561,7 @@ export default function PlatformConsolePage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : null}
             {tab === "policy" && policyDraft ? (
               <div className="p-5">
@@ -596,7 +614,7 @@ export default function PlatformConsolePage() {
           </div>
         </section>
 
-        <section className="af-panel p-4 xl:col-span-4">
+        <section className="af-panel min-w-0 p-4 xl:col-span-4">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="af-h2">即時動態</h2>
             <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--muted)]">

@@ -193,7 +193,7 @@ export default function CaseWorkbenchPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-5">
+        <div className="min-w-0 space-y-4 xl:col-span-5">
           {/* ── 審核點 ── */}
           {c.status === "pending_review" ? (
             <Panel title="審核：這件災情要怎麼處理？" accent="var(--st-pending)">
@@ -294,7 +294,8 @@ export default function CaseWorkbenchPage() {
               )}
               <details className="mt-3">
                 <summary className="cursor-pointer text-[14px] text-[var(--muted)]">EMIC 欄位對照（暫定）</summary>
-                <table className="af-table mt-2">
+                <div className="overflow-x-auto">
+                <table className="af-table mt-2 min-w-[420px]">
                   <thead>
                     <tr>
                       <th>上報欄位</th>
@@ -312,6 +313,7 @@ export default function CaseWorkbenchPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </details>
             </Panel>
           ) : null}
@@ -406,7 +408,7 @@ export default function CaseWorkbenchPage() {
           </section>
         </div>
 
-        <div className="space-y-4 xl:col-span-7">
+        <div className="min-w-0 space-y-4 xl:col-span-7">
           <section className="af-panel">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
               <h2 className="text-[19px] font-semibold text-[var(--ink)]">民眾回報</h2>
@@ -426,7 +428,7 @@ export default function CaseWorkbenchPage() {
               </div>
             )}
             <div className="overflow-x-auto">
-              <table className="af-table">
+              <table className="af-table min-w-[680px]">
                 <thead>
                   <tr>
                     <th>時間</th>

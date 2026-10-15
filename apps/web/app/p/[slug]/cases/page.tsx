@@ -102,7 +102,7 @@ export default function PortalCasesPage() {
       </div>
 
       <div className="grid gap-3 xl:grid-cols-12">
-        <div className="xl:col-span-7">
+        <div className="min-w-0 xl:col-span-7">
           {items === null ? (
             <Skeleton className="h-64" />
           ) : items.length === 0 ? (
