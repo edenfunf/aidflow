@@ -570,6 +570,17 @@
   box-shadow: 0 12px 32px -18px rgba(16, 24, 40, 0.5);
   backdrop-filter: blur(2px);
 }
+/* the hero only becomes a floating card once it sits over the map (sm and up);
+   on phones it is plain page content */
+@media (min-width: 640px) {
+  .af-hero-card-sm {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 12px 32px -18px rgba(16, 24, 40, 0.5);
+    backdrop-filter: blur(2px);
+  }
+}
 .af-spark {
   display: block;
 }
@@ -689,7 +700,8 @@
 .af-radar-stamp {
   position: absolute;
   left: 10px;
-  bottom: 92px;
+  /* phones: clear the floating 我要通報災情 button, which sits at bottom: 64px */
+  bottom: 136px;
   z-index: 5;
   padding: 5px 10px;
   border-radius: 4px;
@@ -699,6 +711,13 @@
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--line);
   pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .af-radar-stamp {
+    bottom: 92px;
+    left: 10px;
+  }
 }
 
 

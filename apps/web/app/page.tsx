@@ -63,13 +63,24 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-      <section className="relative sm:h-[min(62vh,620px)]" style={{ background: "#dfe6ee" }}>
-        {/* the map is a strip above the card on phones, and the backdrop behind it from sm up */}
-        <div className="relative h-[34vh] min-h-[210px] sm:absolute sm:inset-0 sm:h-auto sm:min-h-0">
+      <header className="border-b sm:hidden" style={{ background: "var(--surface)", borderColor: "var(--line)" }}>
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+          <BrandLockup subtitle="災情通報與處理平台" size={30} />
+          <Link href={signedIn ? "/console" : "/login"} className="text-[14px] text-[var(--focus)] hover:underline">
+            {signedIn ? "後台" : "政府人員登入"}
+          </Link>
+        </div>
+      </header>
+
+      <section className="relative bg-[var(--surface)] sm:h-[min(62vh,620px)] sm:bg-[#dfe6ee]">
+        {/* the decorative national map is desktop-only: on a phone it crops the
+            island and pushes the report button below the fold, and the real
+            interactive map is one tap away */}
+        <div className="hidden sm:absolute sm:inset-0 sm:block">
           {hero ? <TerrainMap center={TAIWAN_CENTER} zoom={hero.zoom} padLeft={hero.padLeft} features={[]} visible={heroVisible} enabledLayers={noLayers} threeD orbit minimal className="absolute inset-0" /> : null}
         </div>
-        <div className="af-topfade pointer-events-none absolute inset-x-0 top-0 h-28" />
-        <header className="absolute inset-x-0 top-0 z-20">
+        <div className="af-topfade pointer-events-none absolute inset-x-0 top-0 hidden h-28 sm:block" />
+        <header className="absolute inset-x-0 top-0 z-20 hidden sm:block">
           <div className="mx-auto flex max-w-[1200px] items-center justify-between px-4 py-4">
             <BrandLockup subtitle="災情通報與處理平台" size={34} />
             <Link href={signedIn ? "/console" : "/login"} className="af-btn af-btn-secondary">
@@ -77,11 +88,11 @@ export default function HomePage() {
             </Link>
           </div>
         </header>
-        <div className="px-3 pb-3 sm:pointer-events-none sm:absolute sm:inset-0 sm:flex sm:items-center sm:px-8 sm:pb-0">
-          <div className="af-hero-card -mt-6 w-full max-w-[560px] p-5 sm:pointer-events-auto sm:mx-0 sm:mt-0 sm:ml-[max(0px,calc((100vw-1200px)/2))] sm:p-6">
+        <div className="px-4 py-5 sm:pointer-events-none sm:absolute sm:inset-0 sm:flex sm:items-center sm:px-8 sm:py-0">
+          <div className="af-hero-card-sm w-full max-w-[560px] sm:pointer-events-auto sm:mx-0 sm:ml-[max(0px,calc((100vw-1200px)/2))] sm:p-6">
             <h1 className="text-[30px] font-bold leading-tight text-[var(--ink)] sm:text-[36px]">看到災情，馬上通報</h1>
-            <p className="mt-2 text-[18px] leading-relaxed text-[var(--ink-2)]">免登入、免註冊。通報會即時通知縣府承辦人員，您可以在災情地圖上追蹤處理進度。</p>
-            <p className="mt-2 rounded-md border px-3 py-2 text-[16px] font-medium" style={{ borderColor: "#fecdca", background: "#fef3f2", color: "#b42318" }}>
+            <p className="mt-2 text-[17px] leading-relaxed text-[var(--ink-2)] sm:text-[18px]">免登入、免註冊。通報會即時通知縣府承辦人員，您可以在災情地圖上追蹤處理進度。</p>
+            <p className="mt-3 rounded-md border px-3 py-2 text-[16px] font-medium" style={{ borderColor: "#fecdca", background: "#fef3f2", color: "#b42318" }}>
               危及生命請先撥打 <a href="tel:119" className="underline">119</a>
             </p>
             {featured ? (
@@ -99,7 +110,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <main className="af-page mx-auto max-w-[1200px] px-4 py-8">
+      <main className="af-page mx-auto max-w-[1200px] px-4 pb-8 pt-5 sm:py-8">
         <h2 className="af-h1">目前開放通報的災害事件</h2>
         {error ? <div className="mt-3 text-[16px] text-[var(--sev-high)]">{error}</div> : null}
         {items === null ? (
@@ -136,7 +147,7 @@ export default function HomePage() {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <div className={`mt-4 grid gap-2 sm:grid-cols-2 ${items.length === 1 ? "hidden sm:grid" : ""}`}>
                     <Link href={`/p/${p.slug}/report`} className="af-btn af-btn-lg font-bold text-white" style={{ background: "#d92d20" }}>
                       我要通報
                     </Link>
