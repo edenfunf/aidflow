@@ -121,7 +121,41 @@ export default function ConsoleHome() {
       ) : items.length === 0 ? (
         <EmptyState title="尚未建立任何災害平台" detail="系統管理者輸入災害名稱並選擇災害類型，即可建立民眾通報網站與政府管理後台。" action={admin ? <Link href="/console/new" className="af-btn af-btn-primary">建立第一個平台</Link> : undefined} />
       ) : (
-        <div className="af-panel overflow-x-auto">
+        <>
+        {/* phones: cards, so 進入後台 is not pushed off-screen by six columns */}
+        <ul className="space-y-2 lg:hidden">
+          {items.map((p) => (
+            <li key={p.id} className="af-panel p-3">
+              <div className="flex items-start justify-between gap-2">
+                <Link href={`/console/platforms/${p.id}`} className="min-w-0">
+                  <span className="block text-[17px] font-semibold text-[var(--ink)]">{p.name}</span>
+                  <span className="block font-mono text-[13px] text-[var(--muted)]">/p/{p.slug}</span>
+                </Link>
+                <span className="af-chip flex-none">{STATUS_LABEL[p.status] || p.status}</span>
+              </div>
+              <div className="mt-2 text-[14px] text-[var(--ink-2)]">
+                {p.county || "—"} · {p.towns.join("、") || "全縣"}
+              </div>
+              <div className="text-[14px] text-[var(--muted)]">
+                {p.hazards.map((h) => HAZARD_LABEL[h] || h).join("、")} · 建立 {fmtTime(p.created_at)}
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                <Link href={`/console/platforms/${p.id}`} className="af-btn af-btn-primary flex-1 justify-center">
+                  進入後台
+                </Link>
+                <a href={`/p/${p.slug}`} target="_blank" rel="noreferrer" className="af-btn af-btn-secondary flex-1 justify-center">
+                  民眾網站 ↗
+                </a>
+                {admin ? (
+                  <button type="button" className="af-btn af-btn-ghost" disabled={busy === p.id} onClick={() => setStatus(p.id, p.status === "published" ? "draft" : "published")}>
+                    {p.status === "published" ? "下架" : "發布"}
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="af-panel hidden overflow-x-auto lg:block">
           <table className="af-table min-w-[860px]">
             <thead>
               <tr>
@@ -177,6 +211,7 @@ export default function ConsoleHome() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </ConsoleShell>
   );

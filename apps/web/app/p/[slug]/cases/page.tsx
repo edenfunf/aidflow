@@ -108,7 +108,39 @@ export default function PortalCasesPage() {
           ) : items.length === 0 ? (
             <EmptyState title="沒有符合條件的案件" />
           ) : (
-            <div className="af-panel overflow-x-auto">
+            <>
+            {/* phones get cards: a 7-column table squeezes the address to one
+                glyph per line, which is unreadable on the page citizens use most */}
+            <ul className="space-y-2 md:hidden">
+              {items.map((c) => (
+                <li key={c.id} className="af-panel p-3">
+                  <Link href={`/p/${slug}/cases/${c.id}`} className="flex items-start gap-2.5">
+                    <CategoryBadge category={c.category} size={32} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-[var(--ink)]">{c.title}</span>
+                      <span className="mt-0.5 block text-[13px] text-[var(--muted)]">
+                        <span className="font-mono">{c.case_number}</span> · {c.category_label}
+                      </span>
+                    </span>
+                    <StatusPill status={c.status} phase={c.phase} />
+                  </Link>
+                  <div className="mt-2 text-[14px] text-[var(--ink-2)]">{c.location_label || c.town}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[var(--muted)]">
+                    <SeverityTag severity={c.severity} />
+                    <span className="tabular-nums">{c.unique_reporter_count} 人回報</span>
+                    <span>{c.track_label || "—"}</span>
+                    {c.emic_status ? <span>EMIC：{c.emic_status}</span> : null}
+                    <span title={fmtTime(c.updated_at)}>{fmtAgo(c.updated_at)}</span>
+                  </div>
+                  {c.status === "community_open" ? (
+                    <Link href={`/p/${slug}/cases/${c.id}#assist`} className="af-btn af-btn-secondary mt-2.5 w-full justify-center font-semibold" style={{ color: "var(--st-community)", borderColor: "var(--st-community)" }}>
+                      我來協助處理 →
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <div className="af-panel hidden overflow-x-auto md:block">
               <table className="af-table min-w-[640px]">
                 <thead>
                   <tr>
@@ -165,6 +197,7 @@ export default function PortalCasesPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
         <aside className="hidden xl:col-span-5 xl:block">
