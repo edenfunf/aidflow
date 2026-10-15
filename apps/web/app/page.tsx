@@ -25,7 +25,7 @@ const HERO_CARD_WIDTH = 560; // keep in sync with the hero card's max-width
 // width as camera padding: it keeps Taiwan centred in the clear space to the
 // right at any width. Phones show the card below the fold, so no padding.
 function heroView(width: number): { zoom: number; padLeft: number } {
-  if (width < 900) return { zoom: 6.4, padLeft: 0 };
+  if (width < 900) return { zoom: 6.1, padLeft: 0 };
   const cardRight = Math.max(0, (width - 1200) / 2) + HERO_CARD_WIDTH;
   return { zoom: width >= 1280 ? 7.1 : 6.9, padLeft: Math.min(cardRight, width * 0.5) };
 }
@@ -63,8 +63,11 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-      <section className="relative" style={{ height: "min(62vh, 620px)", background: "#dfe6ee" }}>
-        {hero ? <TerrainMap center={TAIWAN_CENTER} zoom={hero.zoom} padLeft={hero.padLeft} features={[]} visible={heroVisible} enabledLayers={noLayers} threeD orbit minimal className="absolute inset-0" /> : null}
+      <section className="relative sm:h-[min(62vh,620px)]" style={{ background: "#dfe6ee" }}>
+        {/* the map is a strip above the card on phones, and the backdrop behind it from sm up */}
+        <div className="relative h-[34vh] min-h-[210px] sm:absolute sm:inset-0 sm:h-auto sm:min-h-0">
+          {hero ? <TerrainMap center={TAIWAN_CENTER} zoom={hero.zoom} padLeft={hero.padLeft} features={[]} visible={heroVisible} enabledLayers={noLayers} threeD orbit minimal className="absolute inset-0" /> : null}
+        </div>
         <div className="af-topfade pointer-events-none absolute inset-x-0 top-0 h-28" />
         <header className="absolute inset-x-0 top-0 z-20">
           <div className="mx-auto flex max-w-[1200px] items-center justify-between px-4 py-4">
@@ -74,8 +77,8 @@ export default function HomePage() {
             </Link>
           </div>
         </header>
-        <div className="pointer-events-none absolute inset-0 flex items-center px-4 sm:px-8">
-          <div className="af-hero-card pointer-events-auto mx-auto w-full max-w-[560px] p-6 sm:mx-0 sm:ml-[max(0px,calc((100vw-1200px)/2))]">
+        <div className="px-3 pb-3 sm:pointer-events-none sm:absolute sm:inset-0 sm:flex sm:items-center sm:px-8 sm:pb-0">
+          <div className="af-hero-card -mt-6 w-full max-w-[560px] p-5 sm:pointer-events-auto sm:mx-0 sm:mt-0 sm:ml-[max(0px,calc((100vw-1200px)/2))] sm:p-6">
             <h1 className="text-[30px] font-bold leading-tight text-[var(--ink)] sm:text-[36px]">看到災情，馬上通報</h1>
             <p className="mt-2 text-[18px] leading-relaxed text-[var(--ink-2)]">免登入、免註冊。通報會即時通知縣府承辦人員，您可以在災情地圖上追蹤處理進度。</p>
             <p className="mt-2 rounded-md border px-3 py-2 text-[16px] font-medium" style={{ borderColor: "#fecdca", background: "#fef3f2", color: "#b42318" }}>
