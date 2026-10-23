@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -80,18 +81,29 @@ def _audit(db: Session, event_type: str, user: User | None, **payload) -> None:
 
 
 # ── tokens ────────────────────────────────────────────────────────────────
+# development-only fallback: a configured AUTH_SECRET is required outside
+# development (settings.startup_problems refuses to boot without one), so this
+# random value never applies to a real deployment — it only keeps local runs
+# and the test suite working without a secret in the repository.
+_EPHEMERAL_SECRET = secrets.token_urlsafe(48)
+
+
+def _signing_secret() -> str:
+    return settings.AUTH_SECRET.strip() or _EPHEMERAL_SECRET
+
+
 def issue_token(user: User) -> tuple[str, datetime]:
     exp = _now() + timedelta(hours=settings.AUTH_TOKEN_HOURS)
     token = jwt.encode(
         {"sub": str(user.id), "role": user.role, "ver": user.token_version, "exp": exp, "iat": _now()},
-        settings.AUTH_SECRET, algorithm=_ALGO,
+        _signing_secret(), algorithm=_ALGO,
     )
     return token, exp
 
 
 def user_from_token(db: Session, token: str) -> User | None:
     try:
-        claims = jwt.decode(token, settings.AUTH_SECRET, algorithms=[_ALGO])
+        claims = jwt.decode(token, _signing_secret(), algorithms=[_ALGO])
         user_id = uuid.UUID(str(claims.get("sub")))
     except (jwt.PyJWTError, ValueError):
         return None
