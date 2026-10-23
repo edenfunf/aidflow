@@ -113,6 +113,30 @@ def _custom_openapi() -> dict:
         },
     }
     schema["security"] = [{"BearerAuth": []}]
+    # every operation can answer these; spelling them out keeps the published
+    # contract complete (原始碼檢測：OpenAPI Missing Error Handling)
+    schema.setdefault("components", {}).setdefault("schemas", {})["ErrorResponse"] = {
+        "title": "ErrorResponse",
+        "type": "object",
+        "properties": {"detail": {"title": "Detail", "type": "string", "description": "錯誤說明（使用者可讀）"}},
+        "required": ["detail"],
+    }
+    error_ref = {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+    common_errors = {
+        "401": {"description": "未登入或權杖失效", **error_ref},
+        "403": {"description": "角色沒有此操作權限", **error_ref},
+        "429": {"description": "請求過於頻繁（頻率限制）", **error_ref},
+        "500": {"description": "伺服器內部錯誤", **error_ref},
+    }
+    public_errors = {k: v for k, v in common_errors.items() if k in ("429", "500")}
+    for path, ops in schema.get("paths", {}).items():
+        is_public = path.startswith("/v1/public") or path in ("/v1/health", "/v1/line/webhook", "/v1/auth/login")
+        for method, op in ops.items():
+            if method not in ("get", "post", "put", "patch", "delete"):
+                continue
+            responses = op.setdefault("responses", {})
+            for code, body in (public_errors if is_public else common_errors).items():
+                responses.setdefault(code, body)
     app.openapi_schema = schema
     return app.openapi_schema
 

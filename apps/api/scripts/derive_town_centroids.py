@@ -2,7 +2,18 @@
 
 Run from apps/api with the venv. Emits JSON: {county: {town: [lat, lon, n]}}.
 """
-import collections, csv, io, json, statistics, sys
+import collections, csv, io, json, pathlib, statistics, sys
+
+
+def _output_path(arg: str) -> pathlib.Path:
+    """Only write inside the repository: the path comes from argv."""
+    root = pathlib.Path(__file__).resolve().parents[3]
+    p = pathlib.Path(arg)
+    target = (p if p.is_absolute() else root / p).resolve()
+    if root not in target.parents:
+        raise SystemExit(f"refusing to write outside the repository: {target}")
+    return target
+
 
 from app.connectors.base import http_get
 from app.core.config import settings
@@ -44,5 +55,5 @@ for (c, t), pts in sorted(buckets.items()):
     # median, not mean: immune to a single mis-keyed coordinate
     out[c][t] = [round(statistics.median(p[0] for p in pts), 4),
                  round(statistics.median(p[1] for p in pts), 4), len(pts)]
-json.dump(out, open(sys.argv[1], "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+json.dump(out, open(_output_path(sys.argv[1]), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 print("counties:", len(out), "townships:", sum(len(v) for v in out.values()), file=sys.stderr)

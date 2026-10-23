@@ -6,8 +6,7 @@
 #          FORCE=1 bash client/seed_demo.sh    # build a fresh demo platform
 # Env:     API_BASE_URL (default http://localhost:8000)
 #          WEB_BASE_URL (default http://localhost:3000)
-#          ADMIN_USERNAME / ADMIN_PASSWORD  — a 系統管理者 account (login), or
-#          ADMIN_API_KEY                     — the service key, when configured
+#          ADMIN_USERNAME / ADMIN_PASSWORD  — a 系統管理者 account (login)
 
 set -euo pipefail
 
@@ -19,9 +18,7 @@ grep_field() {
 }
 
 KEY_HEADER=()
-if [ -n "${ADMIN_API_KEY:-}" ]; then
-  KEY_HEADER=(-H "X-API-Key: ${ADMIN_API_KEY}")
-elif [ -n "${ADMIN_USERNAME:-}" ]; then
+if [ -n "${ADMIN_USERNAME:-}" ]; then
   TOKEN="$(curl -sS -X POST -H 'Content-Type: application/json' \
     -d "{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD:-}\"}" \
     "${API_BASE_URL}/v1/auth/login" | grep_field token)"

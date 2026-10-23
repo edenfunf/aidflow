@@ -1,6 +1,19 @@
 import json, pathlib, sys
 
-data = json.load(open(sys.argv[1], encoding="utf-8"))
+
+def _repo_path(arg: str) -> pathlib.Path:
+    """Both paths come from argv: keep them inside the repository."""
+    root = pathlib.Path(__file__).resolve().parents[3]
+    p = pathlib.Path(arg)
+    target = (p if p.is_absolute() else root / p).resolve()
+    if root not in target.parents:
+        raise SystemExit(f"refusing to touch a path outside the repository: {target}")
+    return target
+
+
+SOURCE, TARGET = _repo_path(sys.argv[1]), _repo_path(sys.argv[2])
+
+data = json.load(open(SOURCE, encoding="utf-8"))
 lines = ['''"""台灣 368 個鄉鎮市區的代表點（generated — do not edit by hand）。
 
 來源：內政部消防署「避難收容處所點位檔」(data.gov.tw dataset 73242)。
@@ -30,5 +43,5 @@ for county in sorted(data):
     lines.append("    },")
 lines.append("}")
 lines.append("")
-pathlib.Path(sys.argv[2]).write_text("\n".join(lines), encoding="utf-8")
-print("wrote", sys.argv[2], "townships:", total)
+TARGET.write_text("\n".join(lines), encoding="utf-8")
+print("wrote", TARGET, "townships:", total)
