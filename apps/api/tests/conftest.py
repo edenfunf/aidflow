@@ -15,7 +15,6 @@ import tempfile
 
 os.environ.setdefault("MEDIA_ROOT", os.path.join(tempfile.gettempdir(), "aidflow-test-media"))
 os.environ.setdefault("DEMO_MODE", "true")
-os.environ["ADMIN_API_KEY"] = ""
 os.environ["AUTH_REQUIRED"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["INITIAL_ADMIN_PASSWORD"] = ""

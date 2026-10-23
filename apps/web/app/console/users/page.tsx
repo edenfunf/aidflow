@@ -93,7 +93,7 @@ export default function UsersPage() {
             </div>
             <label className="block">
               <span className="af-label">初始密碼（至少 10 字元，含兩種字元類型；首次登入須變更）</span>
-              <input className="af-input mt-1" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />
+              <input className="af-input mt-1" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="off" />
             </label>
             <button
               type="button"

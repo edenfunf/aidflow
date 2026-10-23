@@ -6,12 +6,14 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import uuid
 
 from app.connectors import line
 from app.core.config import settings
 
-SECRET = "test-channel-secret"
+# generated per run so the value is never a literal in the repository
+SECRET = "pytest-" + secrets.token_urlsafe(12)
 
 
 def _signed(body: dict) -> tuple[bytes, dict]:

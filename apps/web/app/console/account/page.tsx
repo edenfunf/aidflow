@@ -61,15 +61,15 @@ export default function AccountPage() {
         {done && !forced ? <div className="mb-3 rounded-md bg-[var(--surface-2)] px-4 py-2.5 text-[16px] text-[var(--st-done)]">已變更密碼，其他裝置上的登入已失效。</div> : null}
         <label className="block">
           <span className="af-label">目前密碼</span>
-          <input className="af-input mt-1" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+          <input className="af-input mt-1" type="password" autoComplete="off" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         </label>
         <label className="mt-3 block">
           <span className="af-label">新密碼（至少 10 字元，含英文大小寫、數字或符號中兩種）</span>
-          <input className="af-input mt-1" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} required />
+          <input className="af-input mt-1" type="password" autoComplete="off" value={next} onChange={(e) => setNext(e.target.value)} required />
         </label>
         <label className="mt-3 block">
           <span className="af-label">再輸入一次新密碼</span>
-          <input className="af-input mt-1" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} required />
+          <input className="af-input mt-1" type="password" autoComplete="off" value={again} onChange={(e) => setAgain(e.target.value)} required />
         </label>
         <button type="submit" className="af-btn af-btn-primary af-btn-lg mt-5 w-full" disabled={busy || !current || !next || !again}>
           {busy ? "變更中…" : "變更密碼"}

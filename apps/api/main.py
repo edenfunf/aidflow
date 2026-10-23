@@ -111,14 +111,8 @@ def _custom_openapi() -> dict:
             "bearerFormat": "JWT",
             "description": "POST /v1/auth/login 取得權杖。/v1/public、/v1/health 與 /v1/line/webhook 免登入。",
         },
-        "ApiKeyAuth": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-Key",
-            "description": "系統服務金鑰（ADMIN_API_KEY），供排程或整合程式使用。",
-        },
     }
-    schema["security"] = [{"BearerAuth": []}, {"ApiKeyAuth": []}]
+    schema["security"] = [{"BearerAuth": []}]
     app.openapi_schema = schema
     return app.openapi_schema
 

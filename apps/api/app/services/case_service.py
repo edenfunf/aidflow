@@ -10,6 +10,8 @@ Notifications are *not* sent from here — callers commit first and then call
 """
 from __future__ import annotations
 
+import logging
+
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -35,6 +37,8 @@ from app.domain.case_states import (
 )
 from app.domain.categories import category_label, severity_rank
 from app.services import notification_service, outbox_service, privacy_service
+
+logger = logging.getLogger("aidflow.cases")
 
 
 class CaseNotFoundError(Exception):
@@ -486,8 +490,8 @@ def after_commit(db: Session, platform: Platform, case: IncidentCase, *, previou
         elif case.status == CaseStatus.community_submitted.value:
             notification_service.staff_community_submitted(platform, case)
         notification_service.notify_reporters(db, platform, case)
-    except Exception:  # noqa: BLE001 — a notification must never fail the request
-        pass
+    except Exception as exc:  # noqa: BLE001 — a notification must never fail the request
+        logger.warning("case notification failed for %s: %s", case.id, exc)
 
 
 # ── queries ───────────────────────────────────────────────────────────────

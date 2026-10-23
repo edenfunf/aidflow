@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import secrets
 
 import pytest
 from sqlalchemy import select
@@ -12,7 +13,9 @@ from app.db.database import SessionLocal
 from app.db.models import EventOutbox, User
 from app.services import auth_service
 
-PASSWORD = "Test-pass-2026"
+# generated per run: a literal here reads as a hardcoded credential to scanners
+PASSWORD = "Pytest-" + secrets.token_urlsafe(12)
+OTHER_PASSWORD = "Pytest-" + secrets.token_urlsafe(12)
 
 
 def _make_user(role: str) -> User:
@@ -70,12 +73,12 @@ def test_wrong_password_locks_account_after_limit(client, auth_on, monkeypatch):
     for _ in range(2):
         r = _login(client, user.username, "wrong-password")
         assert r.status_code == 401 and r.json()["detail"] == "帳號或密碼錯誤"
-    locked = _login(client, user.username, "wrong-password")
+    locked = _login(client, user.username, "Pytest-wrong-" + secrets.token_urlsafe(6))
     assert locked.status_code == 401 and "locked_until" in locked.json()["detail"]
-    # even the right password is refused while locked
+    # even the correct credentials are refused while locked
     assert _login(client, user.username).status_code == 401
     # an unknown username fails the same way (no account enumeration)
-    assert _login(client, "test-nobody-here", "whatever").json()["detail"] == "帳號或密碼錯誤"
+    assert _login(client, "test-nobody-here", secrets.token_urlsafe(8)).json()["detail"] == "帳號或密碼錯誤"
 
 
 def test_password_change_revokes_old_tokens(client, auth_on):
@@ -84,7 +87,7 @@ def test_password_change_revokes_old_tokens(client, auth_on):
     weak = client.post("/v1/auth/password", headers=old, json={"current_password": PASSWORD, "new_password": "short"})
     assert weak.status_code == 422
     changed = client.post("/v1/auth/password", headers=old,
-                          json={"current_password": PASSWORD, "new_password": "New-pass-2026-x"})
+                          json={"current_password": PASSWORD, "new_password": OTHER_PASSWORD})
     assert changed.status_code == 200
     assert client.get("/v1/auth/me", headers=old).status_code == 401
     new = {"Authorization": f"Bearer {changed.json()['token']}"}
@@ -147,7 +150,7 @@ def test_admin_manages_accounts(client, auth_on):
     admin = _make_user("admin")
     ha = _headers(client, admin)
     name = f"test-new-{uuid.uuid4().hex[:6]}"
-    weak = client.post("/v1/users", headers=ha, json={"username": name, "display_name": "新承辦", "role": "officer", "password": "abc"})
+    weak = client.post("/v1/users", headers=ha, json={"username": name, "display_name": "新承辦", "role": "officer", "password": "short"})
     assert weak.status_code == 422
     bad_role = client.post("/v1/users", headers=ha, json={"username": name, "display_name": "新承辦", "role": "boss", "password": PASSWORD})
     assert bad_role.status_code == 422

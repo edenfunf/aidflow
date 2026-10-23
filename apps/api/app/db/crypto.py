@@ -43,7 +43,7 @@ def _key() -> bytes:
             if len(key) == 32:
                 return key
         except ValueError:
-            pass
+            pass  # not base64 — fall through and hash the string instead
         # any other long random string (e.g. openssl rand -hex 32) is hashed to 32 bytes
         return hashlib.sha256(raw.encode("utf-8")).digest()
     if not settings.is_development:

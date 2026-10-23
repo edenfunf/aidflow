@@ -68,7 +68,7 @@ export default function LoginPage() {
           </label>
           <label className="mt-3 block">
             <span className="af-label">密碼</span>
-            <input className="af-input mt-1" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input className="af-input mt-1" type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
           <button type="submit" className="af-btn af-btn-primary af-btn-lg mt-5 w-full" disabled={busy || !username || !password}>
             {busy ? (

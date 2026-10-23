@@ -98,7 +98,7 @@ pending_review ──上報 EMIC──▶ reported_emic ──▶ emic_processin
 
 ## 6. 身分驗證與權限
 
-- `core/security.get_principal`：`Authorization: Bearer`（有效帳號）→ `X-API-Key`（服務，全部權限）→ `AUTH_REQUIRED=false` 時的開發模式 → 否則 401。
+- `core/security.get_principal`：`Authorization: Bearer`（有效帳號）→ `AUTH_REQUIRED=false` 且為開發環境時的開發模式 → 否則 401。整合或排程程式一律以帳號登入，系統不提供萬用服務金鑰。
 - `domain/permissions.py`：承辦審核人員（view_console、review_cases、view_pii）、業務主管（view_console、view_pii、view_audit）、系統管理者（view_console、manage_platforms、manage_line、manage_users、view_audit）。
 - `auth_service`：Argon2id、JWT（含 token_version）、連續失敗鎖定、首次啟動以 `INITIAL_ADMIN_*` 建立管理者、不可停用最後一位管理者。
 - 前端 `lib/auth.ts` 快取 `/v1/auth/me`；`ConsoleShell` 是登入守門（未登入導向 `/login`、必須改密碼導向 `/console/account`、閒置 30 分鐘登出），並依權限顯示導覽與按鈕。

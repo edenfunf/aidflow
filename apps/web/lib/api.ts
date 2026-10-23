@@ -128,6 +128,12 @@ async function request<T>(path: string, init?: RequestInit & { rawBody?: boolean
       setToken("");
       redirectToLogin();
     }
+    // 4xx carries our own wording and tells the user what to do; a 5xx body can
+    // carry internals, so the screens only ever show a generic sentence
+    // (Fortify: System Information Leak: External).
+    if (res.status >= 500) {
+      throw new ApiError(res.status, "系統暫時無法處理這個操作，請稍後再試；若持續發生請聯繫系統管理者。", detail);
+    }
     throw new ApiError(res.status, message, detail);
   }
   if (res.status === 204) return undefined as T;

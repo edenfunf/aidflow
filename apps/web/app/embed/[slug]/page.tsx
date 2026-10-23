@@ -24,7 +24,10 @@ export default function EmbedMap() {
   const onSelect = useCallback((f: MapFeature | GeoFeature | null) => {
     setSelected(f && "geometry" in f && (f as MapFeature).properties.layer === "incident_cases" ? (f as MapFeature) : null);
   }, []);
-  const portal = typeof window !== "undefined" ? `${window.location.origin}/p/${slug}` : `/p/${slug}`;
+  // the slug comes from the URL: accept only the shape a platform slug can
+  // have before putting it in a link (Fortify: DOM XSS / open redirect)
+  const safeSlug = /^[a-z0-9-]{1,64}$/i.test(slug ?? "") ? slug : "";
+  const portal = `/p/${safeSlug}`;
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#e9edf1]">

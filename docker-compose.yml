@@ -26,7 +26,6 @@ services:
       APP_NAME: AidFlow API
       APP_VERSION: 1.0.0
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
       AUTH_SECRET: ${AUTH_SECRET:-}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}

@@ -13,6 +13,8 @@ new one replaces the old.
 """
 from __future__ import annotations
 
+import logging
+
 import re
 import secrets
 import string
@@ -26,6 +28,8 @@ from app.connectors import line
 from app.connectors.base import ConnectorError
 from app.db.models import LineGroup, Platform
 from app.services import outbox_service
+
+logger = logging.getLogger("aidflow.line")
 
 _CODE_ALPHABET = string.ascii_uppercase.replace("O", "").replace("I", "") + "23456789"
 _BIND_RE = re.compile(r"^\s*綁定\s*([A-Za-z0-9]{6})\s*$")
@@ -115,8 +119,9 @@ def _reply(token: str | None, text: str) -> None:
         return
     try:
         line.reply_text(token, text)
-    except ConnectorError:
-        pass
+    except ConnectorError as exc:
+        # a failed reply must not break the webhook — LINE retries delivery
+        logger.info("LINE reply skipped: %s", exc)
 
 
 def handle_webhook(db: Session, body: dict) -> int:

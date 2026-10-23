@@ -73,11 +73,10 @@ def test_cluster_policy_is_configurable_after_creation(client, platform):
     assert cfg["time_window_minutes"]  # default preserved
 
 
-def test_service_key_protects_console_but_not_public(client, platform, monkeypatch):
-    monkeypatch.setattr(settings, "ADMIN_API_KEY", "secret-key")
+def test_login_protects_console_but_not_public(client, platform, monkeypatch):
+    monkeypatch.setattr(settings, "AUTH_REQUIRED", True)
     assert client.get("/v1/platforms").status_code == 401
     assert client.get(f"/v1/platforms/{platform['id']}/reports").status_code == 401
-    assert client.get("/v1/platforms", headers={"X-API-Key": "secret-key"}).status_code == 200
     assert client.get("/v1/health").status_code == 200
     assert client.get("/v1/health").json()["auth_required"] is True
     assert client.get(f"/v1/public/platforms/{platform['slug']}").status_code == 200

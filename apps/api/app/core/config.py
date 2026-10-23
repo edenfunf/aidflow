@@ -9,11 +9,6 @@ class Settings(BaseSettings):
     # must come from the environment (docker-compose / the managed host).
     DATABASE_URL: str
 
-    # Optional service key: when set, a request carrying a matching X-API-Key
-    # header is treated as a system-administrator service call (scripts, CI).
-    # Staff use accounts (AUTH_*) instead.
-    ADMIN_API_KEY: str = ""
-
     # ── 登入與權限 ──────────────────────────────────────────────────────
     # true = 政府後台端點一律需要登入（正式環境必須開啟）。false 只供本機開發／
     # 自動化測試：未帶權杖的請求視為具備全部權限的「開發模式」使用者。
@@ -31,7 +26,7 @@ class Settings(BaseSettings):
     AUTH_FORCE_PASSWORD_CHANGE: bool = False
     # 首次啟動且資料庫沒有任何帳號時，以此建立系統管理者（建立後請立即變更密碼）
     INITIAL_ADMIN_USERNAME: str = "admin"
-    INITIAL_ADMIN_PASSWORD: str = ""
+    INITIAL_ADMIN_PASSWORD: str | None = None
 
     # 通報者聯絡資料（稱呼、電話、Email）AES-256-GCM 加密保存的金鑰：32 bytes 的
     # URL-safe base64，或任一足夠長的隨機字串（例：openssl rand -hex 32）。

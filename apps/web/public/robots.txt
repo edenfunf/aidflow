@@ -1,2 +1,6 @@
 User-agent: *
-Disallow:
+Disallow: /console
+Disallow: /login
+Disallow: /embed
+Disallow: /unsubscribe
+Allow: /

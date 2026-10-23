@@ -2,16 +2,13 @@
 
 Order of precedence for a request:
   1. ``Authorization: Bearer <token>`` of an active staff account;
-  2. ``X-API-Key`` matching ADMIN_API_KEY — a service principal with every
-     permission (scripts, CI, integrations);
-  3. neither: allowed only in a development environment with AUTH_REQUIRED
-     false and no ADMIN_API_KEY configured (local development / tests) — a
-     開發模式 principal. Never available once ENVIRONMENT leaves development.
+  2. no credentials: allowed only in a development environment with
+     AUTH_REQUIRED false (local development / tests) — a 開發模式 principal.
+     Never available once ENVIRONMENT leaves development.
 Otherwise 401. Permission failures are 403.
 """
 from __future__ import annotations
 
-import hmac
 import uuid
 from dataclasses import dataclass, field
 
@@ -84,10 +81,7 @@ def get_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入已失效，請重新登入")
         return Principal(kind="user", name=user.username, role=user.role, perms=perms_for(user.role), user=user)
-    key = request.headers.get("x-api-key", "")
-    if settings.ADMIN_API_KEY and key and hmac.compare_digest(key, settings.ADMIN_API_KEY):
-        return Principal(kind="service", name="系統服務", role=None, perms=ALL_PERMS)
-    if settings.is_development and not settings.AUTH_REQUIRED and not settings.ADMIN_API_KEY:
+    if settings.is_development and not settings.AUTH_REQUIRED:
         return Principal(kind="dev", name="開發模式", role=None, perms=ALL_PERMS)
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="請先登入")
 

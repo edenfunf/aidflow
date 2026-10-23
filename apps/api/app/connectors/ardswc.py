@@ -18,6 +18,8 @@ can show *which* stream is under warning, not just which township.
 """
 from __future__ import annotations
 
+import logging
+
 import io
 import threading
 import time
@@ -27,6 +29,8 @@ from pathlib import Path
 from app.connectors.base import ConnectorError, feature, http_get, http_get_json, matches_county, polygon_feature
 from app.core.config import settings
 from app.utils.geo import simplify_line, twd97_to_wgs84
+
+logger = logging.getLogger("aidflow.ardswc")
 
 SOURCE = "ardswc"
 HOMEPAGE = "https://246.ardswc.gov.tw/"
@@ -296,8 +300,9 @@ def fetch_debris_flow(county: str | None) -> list[dict]:
     known = {f["properties"]["debris_no"] for f in feats}
     try:
         feats += map_impact_ranges(_shapes("impact"), by_stream, county)
-    except ConnectorError:
-        pass  # impact polygons are a refinement; streams alone are still useful
+    except ConnectorError as exc:
+        # impact polygons are a refinement; streams alone are still useful
+        logger.info("debris-flow impact polygons unavailable: %s", exc)
     feats += [f for f in map_alert_points(alerts, county)
               if str(f["properties"].get("debris_no")) not in known and not str(f["id"]).endswith(":None")]
     return feats

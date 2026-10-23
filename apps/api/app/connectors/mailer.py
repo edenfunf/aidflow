@@ -30,6 +30,8 @@ def send(to: str, subject: str, body: str) -> None:
                                   context=ssl.create_default_context()) as s:
                 _login_and_send(s, msg)
         else:
+            if not settings.SMTP_STARTTLS and not settings.is_development:
+                raise ConnectorError("SMTP_STARTTLS 已關閉：拒絕以未加密連線寄送通知信")
             with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT_SECONDS) as s:
                 if settings.SMTP_STARTTLS:
                     s.starttls(context=ssl.create_default_context())

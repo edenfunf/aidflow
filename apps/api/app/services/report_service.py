@@ -4,6 +4,8 @@ the clustering engine.
 """
 from __future__ import annotations
 
+import logging
+
 import secrets
 import uuid
 from datetime import datetime
@@ -16,6 +18,8 @@ from app.domain.categories import CATEGORIES, REPORTER_ROLE_KEYS, escalate
 from app.schemas.report import ReportCreate
 from app.services import cluster_service, notification_service, outbox_service, privacy_service
 from app.utils.geo import TOWN_CENTROIDS, haversine_m, normalize_admin
+
+logger = logging.getLogger("aidflow.reports")
 
 
 class PlatformNotAcceptingError(Exception):
@@ -150,8 +154,8 @@ def _notify_after_intake(db: Session, platform: Platform, report: Report,
             existing = db.get(IncidentCase, report.case_id)
             if existing is not None:
                 notification_service.notify_reporter(platform, existing, report)
-    except Exception:  # noqa: BLE001 — never fail an accepted report on a notification
-        pass
+    except Exception as exc:  # noqa: BLE001 — never fail an accepted report on a notification
+        logger.warning("intake notification failed for report %s: %s", report.id, exc)
 
 
 def list_reports(

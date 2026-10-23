@@ -10,6 +10,8 @@ const embedOrigins = (process.env.EMBED_ALLOWED_ORIGINS || "")
   .filter(Boolean);
 
 const common = [
+  // HSTS: the site is HTTPS-only (Nessus 142960). Two years, subdomains included.
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(self), geolocation=(self), microphone=()" },
