@@ -46,6 +46,28 @@ export default function ConsoleHome() {
     }
   }
 
+  async function remove(p: PlatformItem) {
+    if (p.status === "published") {
+      setError("已發布的平台請先下架再刪除");
+      return;
+    }
+    const typed = window.prompt(`永久刪除「${p.name}」？\n平台內的通報、案件與照片都會一併刪除，無法復原。\n請輸入平台名稱確認：`);
+    if (typed === null) return;
+    if (typed.trim() !== p.name.trim()) {
+      setError("輸入的名稱不符，未刪除");
+      return;
+    }
+    setBusy(p.id);
+    try {
+      await api.deletePlatform(p.id);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const admin = can("manage_platforms");
 
   return (
@@ -151,6 +173,11 @@ export default function ConsoleHome() {
                     {p.status === "published" ? "下架" : "發布"}
                   </button>
                 ) : null}
+                {admin && p.status !== "published" ? (
+                  <button type="button" className="af-btn af-btn-ghost text-[var(--sev-high)]" disabled={busy === p.id} onClick={() => remove(p)}>
+                    刪除
+                  </button>
+                ) : null}
               </div>
             </li>
           ))}
@@ -203,6 +230,11 @@ export default function ConsoleHome() {
                             發布
                           </button>
                         )
+                      ) : null}
+                      {admin && p.status !== "published" ? (
+                        <button type="button" className="af-btn af-btn-ghost text-[var(--sev-high)]" disabled={busy === p.id} onClick={() => remove(p)}>
+                          刪除
+                        </button>
                       ) : null}
                     </div>
                   </td>

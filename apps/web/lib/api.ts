@@ -231,6 +231,7 @@ export const api = {
   createPlatform: (draft: PlatformDraft) => request<PlatformDetail>("/v1/platforms", { method: "POST", body: JSON.stringify(draft) }),
   setPlatformStatus: (id: string, status: string) =>
     request<PlatformDetail>(`/v1/platforms/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
+  deletePlatform: (id: string) => request<{ deleted: boolean; slug: string }>(`/v1/platforms/${id}`, { method: "DELETE" }),
   updatePlatform: (id: string, body: { name?: string; cluster_policy?: Record<string, number | boolean> }) =>
     request<PlatformDetail>(`/v1/platforms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   consoleOverview: (id: string) => request<ConsoleOverview>(`/v1/platforms/${id}/overview`),

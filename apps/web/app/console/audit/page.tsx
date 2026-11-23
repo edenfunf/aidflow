@@ -39,6 +39,7 @@ const EVENT_LABEL: Record<string, string> = {
   "platform.published": "發布平台",
   "platform.draft": "下架平台",
   "platform.archived": "封存平台",
+  "platform.deleted": "刪除平台",
 };
 
 function describe(e: AuditEvent): string {

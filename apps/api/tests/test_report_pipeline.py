@@ -3,6 +3,7 @@ timeline (needs a live database)."""
 from __future__ import annotations
 
 import io
+import uuid
 import struct
 import zlib
 from datetime import datetime, timedelta, timezone
@@ -225,3 +226,40 @@ def test_reporter_contact_details_are_encrypted_at_rest(client, platform):
     assert crypto.decrypt("legacy plaintext") == "legacy plaintext"
     assert crypto.encrypt(raw[1]) == raw[1]  # never double-encrypted
     assert crypto.decrypt(crypto.PREFIX + "AAAA") == crypto.UNREADABLE
+
+
+def test_delete_platform_removes_reports_and_photo_files(client, platform):
+    from app.core.config import settings as _settings
+    from pathlib import Path
+
+    pid, slug = platform["id"], platform["slug"]
+    rid = _submit(client, slug, client_key="del1", lat=23.9700, lon=120.9600, category="flooding")["report_id"]
+    photo = client.post(f"/v1/public/reports/{rid}/photos", files={"file": ("a.png", io.BytesIO(_png_bytes()), "image/png")}).json()
+
+    from app.db.database import SessionLocal
+    from app.db.models import ReportPhoto
+    with SessionLocal() as db:
+        key = db.get(ReportPhoto, uuid.UUID(photo["id"])).storage_key
+    file = Path(_settings.MEDIA_ROOT) / key
+    assert file.exists()
+
+    # published platforms must be taken offline first
+    assert client.delete(f"/v1/platforms/{pid}").status_code == 409
+    client.post(f"/v1/platforms/{pid}/status", json={"status": "draft"})
+    resp = client.delete(f"/v1/platforms/{pid}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["slug"] == slug
+    assert client.get(f"/v1/platforms/{pid}").status_code == 404
+    assert client.get(f"/v1/reports/{rid}").status_code == 404
+    assert not file.exists()
+    assert client.delete(f"/v1/platforms/{pid}").status_code == 404
+
+
+def test_builtin_demo_platform_cannot_be_deleted(client, platform):
+    pid = platform["id"]
+    client.post(f"/v1/platforms/{pid}/status", json={"status": "draft"})
+    with SessionLocal() as db:
+        p = db.get(Platform, uuid.UUID(pid))
+        p.configuration = {**(p.configuration or {}), "demo_key": "nantou-2026-heavy-rain-test"}
+        db.commit()
+    assert client.delete(f"/v1/platforms/{pid}").status_code == 409

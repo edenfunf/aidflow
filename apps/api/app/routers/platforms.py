@@ -123,6 +123,17 @@ def set_status(platform_id: uuid.UUID, payload: PlatformStatusUpdate, db: Sessio
     return detail(db, platform)
 
 
+@router.delete("/{platform_id}", summary="永久刪除平台（需先下架；內建示範平台不可刪）")
+def delete_platform(platform_id: uuid.UUID, db: Session = Depends(get_db),
+                    principal: Principal = Depends(require(Perm.manage_platforms))) -> dict:
+    platform = _require(db, platform_id)
+    try:
+        slug = platform_service.delete_platform(db, platform, actor=principal.actor_name)
+    except platform_service.PlatformDeleteError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return {"deleted": True, "slug": slug}
+
+
 @router.patch("/{platform_id}", response_model=PlatformDetail, summary="Update name / cluster policy / configuration")
 def update_platform(platform_id: uuid.UUID, payload: PlatformConfigUpdate, db: Session = Depends(get_db),
                     _: Principal = Depends(require(Perm.manage_platforms))) -> PlatformDetail:

@@ -244,6 +244,40 @@ def set_status(db: Session, platform: Platform, status: str) -> Platform:
     return platform
 
 
+class PlatformDeleteError(Exception):
+    pass
+
+
+def delete_platform(db: Session, platform: Platform, *, actor: str) -> str:
+    """Permanently remove a platform with its reports, cases and photos.
+
+    Only a platform already taken offline (draft / archived) can go, and the
+    built-in demo platform is never removed. Photo files are unlinked after the
+    rows are gone; the audit event survives (event_outbox has no FK)."""
+    if platform.status == "published":
+        raise PlatformDeleteError("已發布的平台請先下架再刪除")
+    if (platform.configuration or {}).get("demo_key"):
+        raise PlatformDeleteError("內建示範平台不可刪除")
+    from app.db.models import ReportPhoto
+    from app.services import media_service
+
+    photos = list(db.scalars(select(ReportPhoto).where(ReportPhoto.platform_id == platform.id)).all())
+    paths = [media_service.path_for(ph) for ph in photos]
+    slug, name, pid = platform.slug, platform.name, platform.id
+    outbox_service.enqueue_event(
+        db, event_type="platform.deleted", aggregate_id=pid,
+        payload={"platform_id": str(pid), "slug": slug, "name": name, "by": actor},
+    )
+    db.delete(platform)
+    db.commit()
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return slug
+
+
 def update_configuration(
     db: Session, platform: Platform, *, name: str | None = None, cluster_policy: dict | None = None,
     configuration: dict | None = None,
