@@ -40,11 +40,17 @@ def test_emic_track_manual_entry_to_closed_and_off_the_map(client, platform):
     case_id = _case(client, slug, 24.0001, 121.1001, category="road_collapse")
     assert _on_map(client, slug, case_id)
 
-    r = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic"})
+    # manual mode: choosing EMIC without the EMIC case number does not count as reported
+    early = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic"})
+    assert early.status_code == 409 and "EMIC 案號" in early.json()["detail"]
+    assert client.get(f"/v1/cases/{case_id}").json()["case"]["status"] == "pending_review"
+
+    r = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic", "emic_case_no": "EMIC-TEST-0000"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["case"]["status"] == "reported_emic" and body["case"]["track"] == "emic"
-    assert body["result"]["mode"] == "manual" and "回填" in body["result"]["detail"]
+    assert body["case"]["emic_case_no"] == "EMIC-TEST-0000" and body["case"]["emic_channel"] == "manual"
+    assert body["result"]["mode"] == "manual"
     assert body["case"]["reviewed_at"] and body["case"]["reviewed_by"] == "開發模式"
     # reviewing twice is refused
     assert client.post(f"/v1/cases/{case_id}/review", json={"decision": "community"}).status_code == 409
@@ -103,11 +109,13 @@ def test_emic_api_failure_falls_back_to_manual(client, platform, monkeypatch):
     monkeypatch.setattr(settings, "EMIC_SUBMIT_URL", "https://emic.example.invalid/submit")
     monkeypatch.setattr(httpx, "post", lambda *a, **k: httpx.Response(503, text="down"))
     case_id = _case(client, platform["slug"], 24.0201, 121.1201)
-    body = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic"}).json()
+    failed = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic"})
+    assert failed.status_code == 409 and "EMIC 案號" in failed.json()["detail"]
+    assert client.get(f"/v1/cases/{case_id}").json()["case"]["status"] == "pending_review"
+    # filed by hand in EMIC, then the number completes the report
+    body = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic", "emic_case_no": "EMIC-HAND-1"}).json()
     assert body["case"]["status"] == "reported_emic" and body["case"]["emic_channel"] == "manual"
-    assert body["result"]["submitted"] is False and "人工登錄" in body["result"]["detail"]
-    internal = client.get(f"/v1/cases/{case_id}").json()
-    assert any(e["event_type"] == "emic_submit_failed" and not e["public"] for e in internal["events"])
+    assert body["result"]["submitted"] is False
 
 
 def test_community_track_citizen_submits_officer_confirms(client, platform):
@@ -148,7 +156,11 @@ def test_community_case_can_be_escalated_and_pending_can_be_dismissed(client, pl
     slug = platform["slug"]
     case_id = _case(client, slug, 24.0401, 121.1401)
     client.post(f"/v1/cases/{case_id}/review", json={"decision": "community"})
-    esc = client.post(f"/v1/cases/{case_id}/transition", json={"status": "reported_emic"})
+    # escalation goes back through the review gate (退回 → 上報 EMIC with the case number)
+    assert client.post(f"/v1/cases/{case_id}/transition", json={"status": "reported_emic"}).status_code == 400
+    back = client.post(f"/v1/cases/{case_id}/reopen", json={"reason": "超出民眾可處理範圍"})
+    assert back.status_code == 200 and back.json()["case"]["status"] == "pending_review"
+    esc = client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic", "emic_case_no": "EMIC-ESC-1"})
     assert esc.status_code == 200 and esc.json()["case"]["track"] == "emic"
 
     other = _case(client, slug, 24.0501, 121.1501)
@@ -160,7 +172,7 @@ def test_community_case_can_be_escalated_and_pending_can_be_dismissed(client, pl
     # the state machine still refuses shortcuts
     third = _case(client, slug, 24.0601, 121.1601)
     bad = client.post(f"/v1/cases/{third}/transition", json={"status": "closed"})
-    assert bad.status_code == 400 and "reported_emic" in bad.json()["detail"]["allowed"]
+    assert bad.status_code == 400 and "community_open" in bad.json()["detail"]["allowed"]
     assert client.post(f"/v1/cases/{third}/emic", json={"emic_status": "處理中"}).status_code == 409
 
 
@@ -205,3 +217,35 @@ def test_notifications_are_logged_and_subscribers_can_unsubscribe(client, platfo
         n = db.scalars(select(NotificationLog).where(NotificationLog.case_id == uuid.UUID(case_id),
                                                      NotificationLog.channel == "email")).all()
     assert len(n) == 2, "no e-mail after unsubscribing"
+
+
+def test_reopen_review_lets_the_officer_choose_again(client, platform):
+    slug = platform["slug"]
+    case_id = _case(client, slug, 24.0801, 121.1801, category="road_collapse")
+    client.post(f"/v1/cases/{case_id}/review", json={"decision": "emic", "emic_case_no": "EMIC-RE-1"})
+    client.post(f"/v1/cases/{case_id}/emic", json={"status": "emic_processing"})
+
+    # a reason is required
+    assert client.post(f"/v1/cases/{case_id}/reopen", json={"reason": " "}).status_code == 409
+    assert client.post(f"/v1/cases/{case_id}/transition", json={"status": "pending_review"}).status_code == 400
+    back = client.post(f"/v1/cases/{case_id}/reopen", json={"reason": "審核選錯，應由民眾協助 0912-333-444"})
+    assert back.status_code == 200, back.text
+    c = back.json()["case"]
+    assert c["status"] == "pending_review" and c["track"] is None and c["reviewed_at"] is None
+    internal = client.get(f"/v1/cases/{case_id}").json()
+    assert any("退回審核原因" in (e["note"] or "") and not e["public"] for e in internal["events"])
+    public = client.get(f"/v1/public/platforms/{slug}/cases/{case_id}").json()
+    assert "退回審核原因" not in str(public) and "0912-333-444" not in str(public)
+
+    # choose again: community, then dismissed, then reopened once more
+    assert client.post(f"/v1/cases/{case_id}/review", json={"decision": "community"}).json()["case"]["track"] == "community"
+    client.post(f"/v1/cases/{case_id}/reopen", json={"reason": "重複通報"})
+    gone = client.post(f"/v1/cases/{case_id}/review", json={"decision": "dismiss"}).json()["case"]
+    assert gone["status"] == "dismissed" and not _on_map(client, slug, case_id)
+    again = client.post(f"/v1/cases/{case_id}/reopen", json={"reason": "誤判不成案"}).json()["case"]
+    assert again["status"] == "pending_review" and _on_map(client, slug, case_id)
+
+    # closed is final
+    client.post(f"/v1/cases/{case_id}/review", json={"decision": "community"})
+    client.post(f"/v1/cases/{case_id}/transition", json={"status": "closed"})
+    assert client.post(f"/v1/cases/{case_id}/reopen", json={"reason": "x"}).status_code == 409

@@ -125,7 +125,7 @@ def test_role_permission_matrix(client, platform, auth_on):
     # only the officer reviews; supervisor and admin are read-only on cases
     assert client.post(f"/v1/cases/{case_id}/review", headers=hs, json={"decision": "emic"}).status_code == 403
     assert client.post(f"/v1/cases/{case_id}/review", headers=ha, json={"decision": "emic"}).status_code == 403
-    done = client.post(f"/v1/cases/{case_id}/review", headers=ho, json={"decision": "emic"})
+    done = client.post(f"/v1/cases/{case_id}/review", headers=ho, json={"decision": "emic", "emic_case_no": "EMIC-AUTH-1"})
     assert done.status_code == 200 and done.json()["case"]["reviewed_by"] == officer.display_name
 
     # platform management, LINE binding and accounts are the administrator's

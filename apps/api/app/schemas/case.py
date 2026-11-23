@@ -110,6 +110,14 @@ class TransitionRequest(BaseModel):
 class ReviewRequest(BaseModel):
     decision: Literal["emic", "community", "dismiss"] = Field(..., description="上報 EMIC／民間可處理／不成案")
     note: str | None = Field(default=None, max_length=500)
+    # decision=emic：人工登錄模式必填 EMIC 案號，填了才算已上報
+    emic_case_no: str | None = Field(default=None, max_length=60)
+    emic_status: str | None = Field(default=None, max_length=60)
+    assigned_unit: str | None = Field(default=None, max_length=100)
+
+
+class ReopenRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500, description="退回原因（內部紀錄）")
 
 
 class EmicUpdateRequest(BaseModel):

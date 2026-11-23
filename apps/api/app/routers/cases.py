@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.connectors import emic
 from app.core.security import Principal, require
 from app.db.database import get_db
-from app.domain.case_states import InvalidTransitionError, assert_transition
+from app.domain.case_states import InvalidTransitionError
 from app.domain.emic import FIELD_MAP, STATUS_SUGGESTIONS
 from app.domain.permissions import Perm
 from app.schemas.case import (
@@ -23,6 +23,7 @@ from app.schemas.case import (
     EmicInfo,
     EmicUpdateRequest,
     NearbyCase,
+    ReopenRequest,
     ReviewRequest,
     TransitionRequest,
     UpdateRequest,
@@ -126,7 +127,8 @@ def review(case_id: uuid.UUID, payload: ReviewRequest, db: Session = Depends(get
     previous = case.status
     try:
         result = case_service.review(db, platform, case, payload.decision, actor_name=principal.actor_name,
-                                     note=payload.note)
+                                     note=payload.note, emic_case_no=payload.emic_case_no,
+                                     emic_status=payload.emic_status, assigned_unit=payload.assigned_unit)
     except CaseActionError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc))
@@ -169,21 +171,33 @@ def community_confirm(case_id: uuid.UUID, payload: CommunityConfirmRequest, db: 
     return _respond(db, platform, case, previous, ev)
 
 
+@router.post("/cases/{case_id}/reopen", response_model=CaseActionResponse,
+             summary="退回審核：回到待審核，重新選擇上報 EMIC／民間處理／不成案")
+def reopen(case_id: uuid.UUID, payload: ReopenRequest, db: Session = Depends(get_db),
+           principal: Principal = Depends(require(Perm.review_cases))) -> CaseActionResponse:
+    case = _require_case(db, case_id)
+    platform = platform_service.require_platform(db, case.platform_id)
+    previous = case.status
+    try:
+        ev = case_service.reopen_review(db, case, reason=payload.reason, actor_name=principal.actor_name)
+    except CaseActionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    return _respond(db, platform, case, previous, ev)
+
+
 @router.post("/cases/{case_id}/transition", response_model=CaseActionResponse, summary="Move the case along the state machine")
 def transition(case_id: uuid.UUID, payload: TransitionRequest, db: Session = Depends(get_db),
                principal: Principal = Depends(require(Perm.review_cases))) -> CaseActionResponse:
     case = _require_case(db, case_id)
     platform = platform_service.require_platform(db, case.platform_id)
     previous = case.status
-    if payload.status == "reported_emic":
-        # escalation from a community case goes through the EMIC path
-        try:
-            assert_transition(case.status, payload.status)
-        except InvalidTransitionError as exc:
-            raise HTTPException(status_code=400, detail={"message": str(exc), "allowed": presenters.case_item(case)["next_statuses"]})
-        result = case_service.report_to_emic(db, platform, case, actor_name=principal.actor_name,
-                                             note=payload.note or "改列上報 EMIC")
-        return _respond(db, platform, case, previous, result=result)
+    if payload.status in ("reported_emic", "pending_review"):
+        # 上報 EMIC 走審核點（需 EMIC 案號）；退回審核走 /reopen（需原因）
+        raise HTTPException(status_code=400, detail={
+            "message": "上報 EMIC 請先退回審核再選擇上報" if payload.status == "reported_emic" else "退回審核請使用退回功能並填寫原因",
+            "allowed": [s for s in presenters.case_item(case)["next_statuses"] if s not in ("reported_emic", "pending_review")],
+        })
     try:
         ev = case_service.transition(db, case, payload.status, actor_role="operator", actor_name=principal.actor_name,
                                      note=payload.note, public=payload.public)

@@ -149,7 +149,7 @@ SITES: list[dict] = [
             addr="南投縣國姓鄉北港村投80線"), 70),
         (_r("road_blocked", 24.0604, 120.9004, "北港溪旁道路中斷，有落石", "citizen", "guoxing-cit-02",
             addr="南投縣國姓鄉北港村"), 63),
-     ], "flow": [("review", "emic", 6)]},
+     ], "flow": [("review", "emic", 6), ("emic", {"no": "EMIC-1150903-0052"}, 6)]},
     {"reports": [
         (_r("landslide", 24.0420, 120.8580, "國姓街後山邊坡滑動，土石到民宅後方", "citizen", "guoxing-cit-11",
             addr="南投縣國姓鄉國姓村"), 44),
@@ -178,11 +178,15 @@ SITES: list[dict] = [
 
 
 def _apply_flow(db: Session, platform: Platform, case, flow: list[tuple], now: datetime) -> None:
-    for step in flow:
+    for i, step in enumerate(flow):
         kind = step[0]
         at = now - timedelta(minutes=step[-1])
         if kind == "review":
-            case_service.review(db, platform, case, step[1], actor_name=OFFICER, at=at)
+            # 上報 EMIC 需要 EMIC 案號：取這個案件流程裡下一筆 EMIC 登錄的資料
+            info = next((s[1] for s in flow[i + 1:] if s[0] == "emic"), {}) if step[1] == "emic" else {}
+            case_service.review(db, platform, case, step[1], actor_name=OFFICER, at=at,
+                                emic_case_no=info.get("no"), emic_status=info.get("status"),
+                                assigned_unit=info.get("unit"))
         elif kind == "emic":
             info = step[1]
             case_service.update_emic(db, case, actor_name=OFFICER, emic_case_no=info.get("no"),

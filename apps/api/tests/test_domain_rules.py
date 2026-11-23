@@ -33,7 +33,8 @@ def test_both_tracks_are_allowed_paths():
     ("pending_review", "emic_processing"),  # must be reported first
     ("pending_review", "community_submitted"),
     ("closed", "reported_emic"),  # terminal
-    ("dismissed", "pending_review"),  # terminal
+    ("closed", "pending_review"),  # closed is final
+    ("community_open", "reported_emic"),  # escalation goes back through review
     ("emic_processing", "community_open"),  # an EMIC case never goes back to citizens
     ("community_submitted", "dismissed"),
     ("bogus", "closed"),
@@ -47,10 +48,10 @@ def test_illegal_transitions_are_rejected(frm, to):
 
 def test_community_reject_and_escalation_paths():
     assert can_transition("community_submitted", "community_open")  # 退回
-    assert can_transition("community_open", "reported_emic")  # 改列上報
-    assert can_transition("community_submitted", "reported_emic")
+    for s in ("reported_emic", "emic_processing", "community_open", "community_submitted", "dismissed"):
+        assert can_transition(s, "pending_review"), s  # 退回審核
     assert next_statuses("pending_review") == ["reported_emic", "community_open", "dismissed"]
-    assert next_statuses("closed") == [] and next_statuses("dismissed") == []
+    assert next_statuses("closed") == [] and next_statuses("dismissed") == ["pending_review"]
 
 
 def test_phase_and_track_mapping_covers_every_status():

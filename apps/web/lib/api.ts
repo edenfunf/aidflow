@@ -316,8 +316,10 @@ export const api = {
 
   // ── cases ──
   getCase: (caseId: string) => request<CaseDetail>(`/v1/cases/${caseId}`),
-  reviewCase: (caseId: string, body: { decision: ReviewDecision; note?: string }) =>
+  reviewCase: (caseId: string, body: { decision: ReviewDecision; note?: string; emic_case_no?: string; emic_status?: string; assigned_unit?: string }) =>
     request<CaseActionResponse>(`/v1/cases/${caseId}/review`, { method: "POST", body: JSON.stringify(body) }),
+  reopenCase: (caseId: string, reason: string) =>
+    request<CaseActionResponse>(`/v1/cases/${caseId}/reopen`, { method: "POST", body: JSON.stringify({ reason }) }),
   updateEmic: (caseId: string, body: { emic_case_no?: string; emic_status?: string; assigned_unit?: string; note?: string; status?: "emic_processing" | "closed" }) =>
     request<CaseActionResponse>(`/v1/cases/${caseId}/emic`, { method: "POST", body: JSON.stringify(body) }),
   confirmCommunity: (caseId: string, body: { approve: boolean; note?: string }) =>

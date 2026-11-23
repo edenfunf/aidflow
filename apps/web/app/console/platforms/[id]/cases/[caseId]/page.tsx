@@ -23,7 +23,7 @@ import type { CaseDetail, MapFeature, ProgressStep, PublicTimelineItem, ReviewDe
 const TerrainMap = dynamic(() => import("@/components/TerrainMap"), { ssr: false, loading: () => <Skeleton className="h-full w-full" /> });
 
 const DECISIONS: { key: ReviewDecision; title: string; detail: string; color: string }[] = [
-  { key: "emic", title: "上報 EMIC", detail: "需權責單位處理的災情：列入 EMIC 上報，後續依 EMIC 狀態追蹤。", color: "#1d4ed8" },
+  { key: "emic", title: "上報 EMIC", detail: "需權責單位處理的災情：於 EMIC 建立案件並回填 EMIC 案號後，才算已上報。", color: "#1d4ed8" },
   { key: "community", title: "民間可處理", detail: "小型災情（如倒木、排水孔堵塞）：開放民眾協助，民眾上傳處理後照片再由您確認。", color: "#0e7490" },
   { key: "dismiss", title: "不成案", detail: "誤報、重複或不需處理：不公開於地圖，保留紀錄。", color: "#667085" },
 ];
@@ -47,6 +47,7 @@ export default function CaseWorkbenchPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [emicPick, setEmicPick] = useState(false);
   const [emicNo, setEmicNo] = useState("");
   const [emicStatus, setEmicStatus] = useState("");
   const [emicUnit, setEmicUnit] = useState("");
@@ -79,6 +80,22 @@ export default function CaseWorkbenchPage() {
     }, 15000);
     return () => window.clearInterval(t);
   }, [load]);
+
+  const reopen = (caseId: string) => {
+    const reason = window.prompt("退回審核：案件會回到「待審核」，可重新選擇上報 EMIC、民間可處理或不成案。\n請填寫退回原因（內部紀錄，不公開）：");
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setError("請填寫退回原因");
+      return;
+    }
+    setEmicPick(false);
+    run("reopen", () => api.reopenCase(caseId, reason.trim()), "已退回審核，請重新選擇處理方式。");
+  };
+  const reopenButton = (caseId: string) => (
+    <button type="button" className="af-btn af-btn-secondary" disabled={Boolean(busy)} onClick={() => reopen(caseId)}>
+      {busy === "reopen" ? "處理中…" : "↩ 退回審核"}
+    </button>
+  );
 
   const run = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key);
@@ -210,8 +227,12 @@ export default function CaseWorkbenchPage() {
                         className="flex w-full items-start gap-3 rounded-md border-2 p-3.5 text-left transition hover:shadow-md disabled:opacity-60"
                         style={{ borderColor: d.color }}
                         onClick={() => {
+                          if (d.key === "emic") {
+                            setEmicPick((v) => !v);
+                            return;
+                          }
                           if (d.key === "dismiss" && !window.confirm("確定判定為不成案？")) return;
-                          run(`review-${d.key}`, () => api.reviewCase(c.id, { decision: d.key, note: reviewNote.trim() || undefined }), d.key === "community" ? "已開放民眾協助處理。" : d.key === "dismiss" ? "已判定不成案。" : undefined);
+                          run(`review-${d.key}`, () => api.reviewCase(c.id, { decision: d.key, note: reviewNote.trim() || undefined }), d.key === "community" ? "已開放民眾協助處理。" : "已判定不成案。");
                         }}
                       >
                         <span className="mt-0.5 h-5 w-5 flex-none rounded-full border-[3px]" style={{ borderColor: d.color }} />
@@ -222,7 +243,53 @@ export default function CaseWorkbenchPage() {
                           <span className="mt-0.5 block text-[14px] text-[var(--ink-2)]">{d.detail}</span>
                         </span>
                       </button>
-                    ))}
+                    )).flatMap((btn, i) =>
+                      DECISIONS[i].key === "emic" && emicPick
+                        ? [
+                            btn,
+                            <div key="emic-form" className="rounded-md border-2 border-t-0 border-[#1d4ed8] p-3.5 -mt-3.5 pt-4">
+                              {detail.emic.mode === "api" ? (
+                                <p className="text-[14px] text-[var(--ink-2)]">已設定 EMIC 介接：直接按「確認上報」會自動送出；若已在 EMIC 手動建案，可先填入案號。</p>
+                              ) : (
+                                <p className="text-[14px] text-[var(--ink-2)]">請先到 EMIC 建立案件，再把 EMIC 案號填在這裡。填入案號並確認後，案件才會改為「已上報 EMIC」。</p>
+                              )}
+                              <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                                <label>
+                                  <span className="af-label">EMIC 案號（內部）{detail.emic.mode === "api" ? "" : " *"}</span>
+                                  <input className="af-input mt-1 font-mono" value={emicNo} onChange={(e) => setEmicNo(e.target.value)} maxLength={60} placeholder="例如 EMIC-1150903-0012" />
+                                </label>
+                                <label>
+                                  <span className="af-label">EMIC 處理狀態（公開，選填）</span>
+                                  <input className="af-input mt-1" list="emic-status-review" value={emicStatus} onChange={(e) => setEmicStatus(e.target.value)} maxLength={60} />
+                                  <datalist id="emic-status-review">
+                                    {detail.emic.status_suggestions.map((s) => (
+                                      <option key={s} value={s} />
+                                    ))}
+                                  </datalist>
+                                </label>
+                                <label className="sm:col-span-2">
+                                  <span className="af-label">處理單位（公開，選填）</span>
+                                  <input className="af-input mt-1" value={emicUnit} onChange={(e) => setEmicUnit(e.target.value)} maxLength={100} placeholder="例如 公路局中區養護工程分局埔里工務段" />
+                                </label>
+                              </div>
+                              <button
+                                type="button"
+                                className="af-btn af-btn-primary af-btn-lg mt-3 w-full"
+                                disabled={Boolean(busy) || (detail.emic.mode !== "api" && !emicNo.trim())}
+                                onClick={() =>
+                                  run("review-emic", async () => {
+                                    const r = await api.reviewCase(c.id, { decision: "emic", note: reviewNote.trim() || undefined, emic_case_no: emicNo.trim() || undefined, emic_status: emicStatus.trim() || undefined, assigned_unit: emicUnit.trim() || undefined });
+                                    setEmicPick(false);
+                                    return r;
+                                  })
+                                }
+                              >
+                                {busy === "review-emic" ? "處理中…" : detail.emic.mode !== "api" && !emicNo.trim() ? "請先填入 EMIC 案號" : "確認上報 EMIC"}
+                              </button>
+                            </div>,
+                          ]
+                        : [btn]
+                    )}
                   </div>
                 </>
               ) : (
@@ -280,6 +347,7 @@ export default function CaseWorkbenchPage() {
                     <button type="button" className="af-btn af-btn-lg font-bold text-white" style={{ background: "var(--st-done)" }} disabled={Boolean(busy)} onClick={() => window.confirm("確認此案件已處理完成並結案？結案後會自民眾地圖撤除。") && run("emic-close", () => api.updateEmic(c.id, { emic_case_no: emicNo, emic_status: emicStatus || "已處理完成", assigned_unit: emicUnit, note: emicNote.trim() || undefined, status: "closed" }), "已結案並自地圖撤除。")}>
                       處理完成・結案
                     </button>
+                    {reopenButton(c.id)}
                   </div>
                 </>
               ) : (
@@ -324,9 +392,7 @@ export default function CaseWorkbenchPage() {
               <p className="text-[15px] text-[var(--ink-2)]">民眾網站的案件頁已顯示「我來協助處理」。有民眾上傳處理完成照片時，LINE 群組會收到通知，案件會移到「待確認完成」。</p>
               {officer ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" className="af-btn af-btn-secondary" disabled={Boolean(busy)} onClick={() => window.confirm("改列上報 EMIC？") && run("escalate", () => api.transitionCase(c.id, { status: "reported_emic", note: "情況超出民眾可處理範圍，改列上報 EMIC" }))}>
-                    改列上報 EMIC
-                  </button>
+                  {reopenButton(c.id)}
                   <button type="button" className="af-btn af-btn-secondary" disabled={Boolean(busy)} onClick={() => window.confirm("確認已由其他方式處理完成並結案？") && run("close", () => api.transitionCase(c.id, { status: "closed", note: "承辦人員確認已處理完成" }), "已結案並自地圖撤除。")}>
                     已處理完成・直接結案
                   </button>
@@ -352,8 +418,8 @@ export default function CaseWorkbenchPage() {
                       不通過・退回
                     </button>
                   </div>
-                  <button type="button" className="mt-2 text-[14px] text-[var(--focus)] hover:underline" disabled={Boolean(busy)} onClick={() => window.confirm("改列上報 EMIC？") && run("escalate", () => api.transitionCase(c.id, { status: "reported_emic", note: "民眾處理後仍需權責單位處理，改列上報 EMIC" }))}>
-                    仍需權責單位處理？改列上報 EMIC
+                  <button type="button" className="mt-2 text-[14px] text-[var(--focus)] hover:underline" disabled={Boolean(busy)} onClick={() => reopen(c.id)}>
+                    仍需權責單位處理或要改判？退回審核重新選擇
                   </button>
                 </>
               ) : null}
@@ -363,6 +429,7 @@ export default function CaseWorkbenchPage() {
           {c.status === "closed" || c.status === "dismissed" ? (
             <Panel title={c.status === "closed" ? "已結案" : "不成案"} accent={c.status === "closed" ? "var(--st-done)" : "var(--st-dismissed)"}>
               <p className="text-[15px] text-[var(--ink-2)]">{c.status === "closed" ? "此案件已處理完成，並已自民眾地圖撤除。" : "此通報經審核判定不成案，不會公開於地圖。"}</p>
+              {officer && c.status === "dismissed" ? <div className="mt-3">{reopenButton(c.id)}</div> : null}
             </Panel>
           ) : null}
 

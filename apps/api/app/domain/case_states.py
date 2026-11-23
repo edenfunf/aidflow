@@ -7,10 +7,12 @@ always derived from real, validated transitions.
 Flow agreed with 南投縣政府 (2026-09-03):
 
     民眾通報 → 同地點聚合 → pending_review（承辦審核點）
-        ├─ 需上報   → reported_emic → emic_processing → closed
+        ├─ 需上報   → （回填 EMIC 案號後）reported_emic → emic_processing → closed
         ├─ 小型災情 → community_open → community_submitted → closed
         │                    ↑ 退回 ────────────┘
         └─ 誤報／重複 → dismissed
+
+    未結案的案件（含不成案）都可「退回審核」回到 pending_review 重新選擇（2026-11-24）。
 
 EMIC 欄位規格尚未提供：EMIC 側的細部狀態以 ``IncidentCase.emic_status``
 （自 EMIC 同步或承辦登錄的文字）呈現，本系統只維護上述粗粒度流程。
@@ -33,15 +35,21 @@ class CaseStatus(str, Enum):
 TRANSITIONS: dict[CaseStatus, frozenset[CaseStatus]] = {
     CaseStatus.pending_review: frozenset({CaseStatus.reported_emic, CaseStatus.community_open,
                                           CaseStatus.dismissed}),
-    CaseStatus.reported_emic: frozenset({CaseStatus.emic_processing, CaseStatus.closed}),
-    CaseStatus.emic_processing: frozenset({CaseStatus.closed}),
-    CaseStatus.community_open: frozenset({CaseStatus.community_submitted, CaseStatus.reported_emic,
-                                          CaseStatus.closed, CaseStatus.dismissed}),
+    CaseStatus.reported_emic: frozenset({CaseStatus.emic_processing, CaseStatus.closed, CaseStatus.pending_review}),
+    CaseStatus.emic_processing: frozenset({CaseStatus.closed, CaseStatus.pending_review}),
+    CaseStatus.community_open: frozenset({CaseStatus.community_submitted, CaseStatus.closed,
+                                          CaseStatus.dismissed, CaseStatus.pending_review}),
     CaseStatus.community_submitted: frozenset({CaseStatus.closed, CaseStatus.community_open,
-                                               CaseStatus.reported_emic}),
+                                               CaseStatus.pending_review}),
     CaseStatus.closed: frozenset(),
-    CaseStatus.dismissed: frozenset(),
+    CaseStatus.dismissed: frozenset({CaseStatus.pending_review}),
 }
+
+# 退回審核：未結案的案件（含不成案）可退回 pending_review 重新選擇處理方式；
+# 改列上報 EMIC 也走這條路（退回 → 審核選上報 EMIC → 回填 EMIC 案號）。
+REOPENABLE_STATUSES: frozenset[CaseStatus] = frozenset(
+    s for s, targets in TRANSITIONS.items() if CaseStatus.pending_review in targets
+)
 
 EMIC_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.reported_emic, CaseStatus.emic_processing})
 COMMUNITY_STATUSES: frozenset[CaseStatus] = frozenset({CaseStatus.community_open, CaseStatus.community_submitted})

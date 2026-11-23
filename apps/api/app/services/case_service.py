@@ -30,6 +30,7 @@ from app.domain.case_states import (
     EMIC_STATUSES,
     PENDING_STATUSES,
     QUEUED_STATUSES,
+    REOPENABLE_STATUSES,
     CaseStatus,
     assert_transition,
     public_label,
@@ -114,8 +115,10 @@ def _event(
         public=public,
         payload=payload or {},
     )
-    if at is not None:
-        ev.created_at = at
+    # the application clock, not the database's now(): every event of one
+    # transaction would otherwise share the same timestamp and the timeline
+    # would order them by random id (e.g. EMIC 資訊更新 before 已上報 EMIC)
+    ev.created_at = at if at is not None else _now()
     db.add(ev)
     db.flush()
     outbox_service.enqueue_event(
@@ -291,6 +294,18 @@ def transition(
     if to_status == CaseStatus.closed.value:
         case.closed_at = stamp
         case.resolved_at = case.resolved_at or stamp
+    if to_status == CaseStatus.pending_review.value:
+        # 退回審核: the earlier decision no longer stands, so the case goes back to
+        # the review gate without a track; what EMIC already returned is kept
+        case.track = None
+        case.reviewed_at = None
+        case.reviewed_by = None
+        case.emic_reported_at = None
+        case.community_submitted_at = None
+        if frm == CaseStatus.dismissed.value and case.cluster_id:
+            cluster = db.get(ReportCluster, case.cluster_id)
+            if cluster is not None:
+                cluster.status = "promoted"
     if to_status in (CaseStatus.closed.value, CaseStatus.dismissed.value) and case.cluster_id:
         cluster = db.get(ReportCluster, case.cluster_id)
         if cluster is not None:
@@ -311,6 +326,9 @@ def review(
     actor_name: str | None,
     note: str | None = None,
     at: datetime | None = None,
+    emic_case_no: str | None = None,
+    emic_status: str | None = None,
+    assigned_unit: str | None = None,
 ) -> dict:
     """審核點: decide how a pending case is handled.
 
@@ -321,7 +339,8 @@ def review(
     if case.status != CaseStatus.pending_review.value:
         raise CaseActionError("此案件已審核過")
     if decision == "emic":
-        return report_to_emic(db, platform, case, actor_name=actor_name, note=note, at=at)
+        return report_to_emic(db, platform, case, actor_name=actor_name, note=note, at=at,
+                              emic_case_no=emic_case_no, emic_status=emic_status, assigned_unit=assigned_unit)
     if decision == "community":
         transition(db, case, CaseStatus.community_open.value, actor_name=actor_name, at=at,
                    note=note or "經審核為小型災情，開放民眾協助處理；處理完成請上傳照片回報")
@@ -341,15 +360,19 @@ def report_to_emic(
     actor_name: str | None,
     note: str | None = None,
     at: datetime | None = None,
+    emic_case_no: str | None = None,
+    emic_status: str | None = None,
+    assigned_unit: str | None = None,
 ) -> dict:
-    """Move the case to 已上報 EMIC. With EMIC_SUBMIT_URL configured the case
-    is sent; otherwise (or when sending fails) the officer files it in EMIC by
-    hand and records the EMIC case number — the result says which."""
-    transition(db, case, CaseStatus.reported_emic.value, actor_name=actor_name, at=at,
-               note=note or "經審核需上報，已列入 EMIC 上報")
+    """Move the case to 已上報 EMIC — only once it really is filed in EMIC.
+
+    With EMIC_SUBMIT_URL configured the case is sent first; otherwise (or when
+    sending fails) the officer files it in EMIC by hand and must enter the EMIC
+    case number here. Until then the case stays at the review gate."""
+    case_no = (emic_case_no or "").strip()
     result = {"decision": "emic", "mode": emic.mode(), "submitted": False, "detail": None}
-    case.emic_channel = "manual"
-    if emic.mode() == "api":
+    got: dict | None = None
+    if emic.mode() == "api" and not case_no:
         reports = reports_of(db, case.id)
         from app.services import media_service
 
@@ -357,21 +380,51 @@ def report_to_emic(
         photos = [f"{base}{media_service.public_url(p)}" for p in media_service.photos_for_case(db, case.id, public_only=True)]
         try:
             got = emic.submit(emic.build_payload(platform, case, reports, photos))
-            case.emic_channel = "api"
-            case.emic_case_no = got.get("case_no") or case.emic_case_no
-            case.emic_status = got.get("status") or case.emic_status
-            case.emic_synced_at = _now()
-            result.update(submitted=True, detail="已送出至 EMIC 介接端點")
-            _event(db, case, event_type="emic_submitted", actor_role="system", public=False,
-                   note="已透過介接端點上報 EMIC" + (f"（EMIC 案號 {case.emic_case_no}）" if case.emic_case_no else ""),
-                   payload={"emic_case_no": case.emic_case_no})
         except ConnectorError as exc:
-            result.update(detail=f"自動上報失敗，請改以人工登錄：{exc.reason}")
-            _event(db, case, event_type="emic_submit_failed", actor_role="system", public=False,
-                   note=f"EMIC 自動上報失敗：{exc.reason}")
+            raise CaseActionError(f"EMIC 自動上報失敗：{exc.reason}。請於 EMIC 建立案件後填入 EMIC 案號再上報")
+    elif not case_no:
+        raise CaseActionError("請先於 EMIC 建立案件，再填入 EMIC 案號完成上報")
+
+    transition(db, case, CaseStatus.reported_emic.value, actor_name=actor_name, at=at,
+               note=note or "經審核需上報，已上報 EMIC")
+    if got is not None:
+        case.emic_channel = "api"
+        case.emic_case_no = got.get("case_no") or case.emic_case_no
+        case.emic_status = got.get("status") or case.emic_status
+        case.emic_synced_at = _now()
+        result.update(submitted=True, detail="已送出至 EMIC 介接端點")
+        _event(db, case, event_type="emic_submitted", actor_role="system", public=False,
+               note="已透過介接端點上報 EMIC" + (f"（EMIC 案號 {case.emic_case_no}）" if case.emic_case_no else ""),
+               payload={"emic_case_no": case.emic_case_no})
     else:
-        result["detail"] = "EMIC 介接規格尚未提供：請於 EMIC 建立案件後，回填 EMIC 案號與處理狀態。"
+        case.emic_channel = "manual"
+        update_emic(db, case, actor_name=actor_name, emic_case_no=case_no, emic_status=emic_status,
+                    assigned_unit=assigned_unit, at=at + timedelta(microseconds=1) if at else None)
+        result["detail"] = "已登錄 EMIC 案號，案件改為已上報 EMIC。"
     return result
+
+
+def reopen_review(
+    db: Session,
+    case: IncidentCase,
+    *,
+    reason: str,
+    actor_name: str | None,
+    at: datetime | None = None,
+) -> CaseEvent:
+    """退回審核: send an undecided-again case back to the review gate so the
+    officer can choose EMIC / community / dismiss anew. The reason is internal."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise CaseActionError("請填寫退回原因")
+    if case.status not in {s.value for s in REOPENABLE_STATUSES}:
+        raise CaseActionError("已結案的案件無法退回審核")
+    frm = case.status
+    ev = transition(db, case, CaseStatus.pending_review.value, actor_name=actor_name, at=at,
+                    note="案件退回重新審核", payload={"from_status": frm})
+    _event(db, case, event_type="internal_note", actor_role="operator", actor_name=actor_name,
+           note=f"退回審核原因：{reason}", public=False, at=at)
+    return ev
 
 
 def update_emic(
