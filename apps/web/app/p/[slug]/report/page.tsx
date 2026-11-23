@@ -36,6 +36,9 @@ export default function ReportPage() {
   const [role, setRole] = useState("citizen");
   const [files, setFiles] = useState<File[]>([]);
   const [subscribe, setSubscribe] = useState(false);
+  // typing an e-mail means "keep me posted" — tick the box once, but never
+  // re-tick it after the person deliberately unticked it
+  const subscribeTouched = useRef(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -151,6 +154,10 @@ export default function ReportPage() {
             {result.notify_opt_in ? (
               <div className="mt-3 rounded bg-[var(--surface-2)] px-4 py-3 text-[15px] text-[var(--ink-2)]">
                 案件每次更新狀態，都會寄信到 <b>{email}</b>；信中附有取消通知的連結。
+              </div>
+            ) : email.trim() ? (
+              <div className="mt-3 rounded bg-[var(--surface-2)] px-4 py-3 text-[15px] text-[var(--ink-2)]">
+                您留了 Email 但<b>未訂閱進度通知</b>，案件更新時不會寄信給您；可隨時從「查看處理進度」頁面查詢。
               </div>
             ) : null}
             <div className="mt-5 flex flex-col gap-2.5">
@@ -309,7 +316,10 @@ export default function ReportPage() {
         <section className="af-panel mb-3 p-4 sm:p-5">
           <h2 className="mb-2 text-[19px] font-semibold text-[var(--ink)]">5. 想知道後續處理進度嗎？（選填）</h2>
           <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3" style={{ borderColor: subscribe ? "var(--brand)" : "var(--line-2)", background: subscribe ? "var(--surface-2)" : undefined }}>
-            <input type="checkbox" className="mt-1 h-5 w-5 flex-none accent-[var(--brand)]" checked={subscribe} onChange={(e) => setSubscribe(e.target.checked)} />
+            <input type="checkbox" className="mt-1 h-5 w-5 flex-none accent-[var(--brand)]" checked={subscribe} onChange={(e) => {
+                subscribeTouched.current = true;
+                setSubscribe(e.target.checked);
+              }} />
             <span>
               <span className="block text-[17px] font-medium text-[var(--ink)]">我要接收案件處理進度通知</span>
               <span className="block text-[14px] text-[var(--muted)]">案件狀態更新時寄信通知您；不留資料也可以正常通報。</span>
@@ -318,7 +328,10 @@ export default function ReportPage() {
           <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <span className="af-label">Email{subscribe ? "（接收通知必填）" : "（選填）"}</span>
-              <input className="af-input mt-1" type="email" inputMode="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} aria-invalid={emailError} />
+              <input className="af-input mt-1" type="email" inputMode="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={(e) => {
+                setEmail(e.target.value);
+                if (!subscribeTouched.current && e.target.value.trim()) setSubscribe(true);
+              }} maxLength={254} aria-invalid={emailError} />
               {emailError ? <span className="mt-1 block text-[14px] text-[var(--sev-high)]">Email 格式不正確</span> : null}
             </label>
             <label>
