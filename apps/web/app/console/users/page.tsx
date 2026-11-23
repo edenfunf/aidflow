@@ -57,6 +57,25 @@ export default function UsersPage() {
     );
   }
 
+  // same rules the API enforces, shown while typing instead of after a failed submit
+  const uname = form.username.trim();
+  const usernameHint = !uname
+    ? null
+    : uname.length < 3
+      ? "帳號至少需 3 個字元"
+      : !/^[A-Za-z0-9._-]+$/.test(uname)
+        ? "帳號只能使用英文字母、數字與 . _ -"
+        : null;
+  const pw = form.password;
+  const pwClasses = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+  const passwordHint = !pw
+    ? null
+    : pw.length < 10
+      ? `密碼至少需 10 個字元（目前 ${pw.length} 個）`
+      : pwClasses < 2
+        ? "密碼需包含英文大小寫、數字或符號中至少兩種"
+        : null;
+
   return (
     <ConsoleShell title="帳號管理" crumbs={[{ href: "/console", label: "政府管理後台" }, { label: "帳號管理" }]}>
       {error ? (
@@ -71,7 +90,8 @@ export default function UsersPage() {
           <div className="mt-3 space-y-3">
             <label className="block">
               <span className="af-label">帳號（英數字）</span>
-              <input className="af-input mt-1 font-mono" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} maxLength={64} autoComplete="off" />
+              <input className="af-input mt-1 font-mono" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} maxLength={64} autoComplete="off" aria-invalid={Boolean(usernameHint)} />
+              {usernameHint ? <span className="mt-1 block text-[14px] text-[var(--sev-high)]">{usernameHint}</span> : <span className="mt-1 block text-[13px] text-[var(--muted)]">3–64 個字元，例：renai01</span>}
             </label>
             <label className="block">
               <span className="af-label">顯示名稱（例：仁愛鄉公所 王承辦）</span>
@@ -93,12 +113,13 @@ export default function UsersPage() {
             </div>
             <label className="block">
               <span className="af-label">初始密碼（至少 10 字元，含兩種字元類型；首次登入須變更）</span>
-              <input className="af-input mt-1" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="off" />
+              <input className="af-input mt-1" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="off" aria-invalid={Boolean(passwordHint)} />
+              {passwordHint ? <span className="mt-1 block text-[14px] text-[var(--sev-high)]">{passwordHint}</span> : null}
             </label>
             <button
               type="button"
               className="af-btn af-btn-primary af-btn-lg w-full"
-              disabled={!form.username.trim() || !form.display_name.trim() || !form.password || busy === "create"}
+              disabled={!uname || !form.display_name.trim() || !pw || Boolean(usernameHint) || Boolean(passwordHint) || busy === "create"}
               onClick={() =>
                 run(
                   "create",

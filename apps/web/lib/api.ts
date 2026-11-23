@@ -99,6 +99,64 @@ function redirectToLogin(): void {
   window.location.assign(`/login?next=${encodeURIComponent(here)}`);
 }
 
+// FastAPI 422 bodies are a list of pydantic errors; turn them into one
+// readable Chinese sentence instead of showing raw JSON.
+const FIELD_LABEL: Record<string, string> = {
+  username: "帳號",
+  display_name: "顯示名稱",
+  password: "密碼",
+  new_password: "新密碼",
+  current_password: "目前密碼",
+  role: "角色",
+  name: "名稱",
+  description: "說明",
+  email: "Email",
+  phone: "電話",
+  lat: "緯度",
+  lon: "經度",
+  status: "狀態",
+  note: "備註",
+};
+
+type ValidationItem = { type?: string; loc?: (string | number)[]; msg?: string; ctx?: Record<string, unknown> };
+
+function describeValidation(items: ValidationItem[]): string {
+  const parts = items.slice(0, 3).map((e) => {
+    const key = [...(e.loc || [])].reverse().find((x) => typeof x === "string" && x !== "body") as string | undefined;
+    const field = (key && FIELD_LABEL[key]) || "欄位";
+    const ctx = e.ctx || {};
+    switch (e.type) {
+      case "missing":
+        return `${field}為必填`;
+      case "string_too_short":
+        return `${field}至少需 ${ctx.min_length} 個字元`;
+      case "string_too_long":
+        return `${field}最多 ${ctx.max_length} 個字元`;
+      case "too_short":
+        return `${field}至少需 ${ctx.min_length} 項`;
+      case "too_long":
+        return `${field}最多 ${ctx.max_length} 項`;
+      case "greater_than_equal":
+        return `${field}不可小於 ${ctx.ge}`;
+      case "less_than_equal":
+        return `${field}不可大於 ${ctx.le}`;
+      case "string_pattern_mismatch":
+        return `${field}格式不正確`;
+      case "uuid_parsing":
+      case "int_parsing":
+      case "float_parsing":
+      case "bool_parsing":
+        return `${field}格式不正確`;
+      case "enum":
+      case "literal_error":
+        return `${field}的選項不正確`;
+      default:
+        return `${field}格式不正確`;
+    }
+  });
+  return `${parts.join("；")}。`;
+}
+
 async function request<T>(path: string, init?: RequestInit & { rawBody?: boolean }): Promise<T> {
   const headers: Record<string, string> = { ...((init?.headers as Record<string, string>) || {}) };
   if (init?.body && !init.rawBody && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
@@ -120,7 +178,9 @@ async function request<T>(path: string, init?: RequestInit & { rawBody?: boolean
       message =
         typeof body?.detail === "string"
           ? body.detail
-          : body?.detail?.message || JSON.stringify(body?.detail ?? body);
+          : Array.isArray(body?.detail)
+            ? describeValidation(body.detail)
+            : body?.detail?.message || "送出的資料格式不正確，請檢查後再試。";
     } catch {
       /* non-JSON error */
     }
