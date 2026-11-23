@@ -104,7 +104,7 @@ export function SectionHeader({ title, eyebrow, right }: { title: string; eyebro
 
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="inline-flex items-center gap-1 text-xs text-[var(--muted)] hover:text-[var(--ink)]">
+    <Link href={href} className="-my-2 inline-flex items-center gap-1 py-2.5 pr-3 text-[14px] text-[var(--muted)] hover:text-[var(--ink)]">
       ← {label}
     </Link>
   );

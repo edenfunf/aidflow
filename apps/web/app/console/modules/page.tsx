@@ -68,7 +68,26 @@ export default function ModulesPage() {
                     {d.label} <span className="ml-1 font-normal text-[var(--muted)]">{grouped[d.key].length}</span>
                   </h2>
                 </div>
-                <table className="af-table">
+                {/* phones: one card per module instead of a five-column table */}
+                <ul className="divide-y md:hidden" style={{ borderColor: "var(--line)" }}>
+                  {grouped[d.key].map((m) => (
+                    <li key={m.id} className="px-3 py-3">
+                      <div className="flex flex-wrap items-center gap-2 font-medium">
+                        {m.layer_key ? <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: LAYERS[m.layer_key]?.hex || "#667085" }} /> : null}
+                        {m.name}
+                        {m.core ? <span className="af-chip !py-0 text-[12px]">核心</span> : null}
+                        {!m.implemented ? <span className="af-chip !py-0 text-[12px]">規劃中</span> : null}
+                      </div>
+                      <div className="break-all font-mono text-[13px] text-[var(--muted)]">{m.id}</div>
+                      <div className="mt-1 text-[14px] text-[var(--ink-2)]">{m.description}</div>
+                      <div className="mt-1.5 text-[13px] text-[var(--muted)]">
+                        {[MODULE_TYPE_LABEL[m.module_type], m.applicable_hazards.includes("*") ? "所有災害" : m.applicable_hazards.map((h) => HAZARD_LABEL[h] || h).join("、"), m.default_enabled ? "建議啟用" : "手動"].join(" · ")}
+                        {m.dependencies.length ? <span className="break-all"> · 相依 {m.dependencies.join(", ")}</span> : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <table className="af-table hidden md:table">
                   <thead>
                     <tr>
                       <th>模組</th>

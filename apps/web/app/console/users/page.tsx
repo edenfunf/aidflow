@@ -140,7 +140,7 @@ export default function UsersPage() {
           {users === null ? (
             <Skeleton className="m-4 h-40" />
           ) : (
-            <table className="af-table min-w-[760px]">
+            <table className="af-table af-table-stack min-w-[760px]">
               <thead>
                 <tr>
                   <th>帳號</th>
@@ -176,7 +176,7 @@ export default function UsersPage() {
                         {u.locked ? <div className="text-[13px] text-[var(--sev-high)]">暫時鎖定中</div> : null}
                         {u.must_change_password ? <div className="text-[13px] text-[var(--st-pending)]">待變更密碼</div> : null}
                       </td>
-                      <td className="text-[14px] text-[var(--muted)]">{u.last_login_at ? fmtTime(u.last_login_at) : "尚未登入"}</td>
+                      <td className="text-[14px] text-[var(--muted)]"><span className="md:hidden">最後登入 </span>{u.last_login_at ? fmtTime(u.last_login_at) : "尚未登入"}</td>
                       <td className="text-right">
                         <div className="flex justify-end gap-1.5">
                           <button

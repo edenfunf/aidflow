@@ -69,7 +69,7 @@ export default function PortalCasesPage() {
             </button>
           ))}
         </div>
-        <select className="af-input !w-auto !py-1 text-xs" value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select className="af-input !w-auto !py-2 text-[14px] sm:!py-1 sm:text-xs" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">所有類別</option>
           {(platform?.report_categories || []).map((c) => (
             <option key={c.key} value={c.key}>
@@ -77,7 +77,7 @@ export default function PortalCasesPage() {
             </option>
           ))}
         </select>
-        <select className="af-input !w-auto !py-1 text-xs" value={town} onChange={(e) => setTown(e.target.value)}>
+        <select className="af-input !w-auto !py-2 text-[14px] sm:!py-1 sm:text-xs" value={town} onChange={(e) => setTown(e.target.value)}>
           <option value="">所有鄉鎮</option>
           {(platform?.towns || []).map((t) => (
             <option key={t} value={t}>
@@ -85,7 +85,7 @@ export default function PortalCasesPage() {
             </option>
           ))}
         </select>
-        <select className="af-input !w-auto !py-1 text-xs" value={severity} onChange={(e) => setSeverity(e.target.value as Severity | "")}>
+        <select className="af-input !w-auto !py-2 text-[14px] sm:!py-1 sm:text-xs" value={severity} onChange={(e) => setSeverity(e.target.value as Severity | "")}>
           <option value="">所有嚴重度</option>
           {SEVERITY_ORDER.map((s) => (
             <option key={s} value={s}>
@@ -93,7 +93,7 @@ export default function PortalCasesPage() {
             </option>
           ))}
         </select>
-        <select className="af-input !w-auto !py-1 text-xs" value={sort} onChange={(e) => setSort(e.target.value)}>
+        <select className="af-input !w-auto !py-2 text-[14px] sm:!py-1 sm:text-xs" value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="updated_desc">最近更新</option>
           <option value="created_desc">最新成案</option>
           <option value="severity_desc">嚴重度</option>
@@ -118,9 +118,8 @@ export default function PortalCasesPage() {
                     <CategoryBadge category={c.category} size={32} />
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold text-[var(--ink)]">{c.title}</span>
-                      <span className="mt-0.5 block text-[13px] text-[var(--muted)]">
-                        <span className="font-mono">{c.case_number}</span> · {c.category_label}
-                      </span>
+                      {/* the title already names the category (e.g. 水里鄉積淹水) */}
+                      <span className="mt-0.5 block whitespace-nowrap font-mono text-[13px] text-[var(--muted)]">{c.case_number}</span>
                     </span>
                     <StatusPill status={c.status} phase={c.phase} />
                   </Link>

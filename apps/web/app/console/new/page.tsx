@@ -150,7 +150,7 @@ export default function NewPlatformPage() {
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[14px] text-[var(--muted)]">
             範例：
             {NAME_EXAMPLES.map((n) => (
-              <button key={n} type="button" className="text-[var(--focus)] hover:underline" onClick={() => setName(n)}>
+              <button key={n} type="button" className="-my-1.5 py-1.5 text-[var(--focus)] hover:underline" onClick={() => setName(n)}>
                 {n}
               </button>
             ))}

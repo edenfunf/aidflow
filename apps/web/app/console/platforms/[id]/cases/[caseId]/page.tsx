@@ -169,6 +169,32 @@ export default function CaseWorkbenchPage() {
   const officer = can("review_cases");
   const citizenPhotos = detail.photos.filter((p) => p.source === "citizen" && p.kind === "after");
   const isEmic = c.status === "reported_emic" || c.status === "emic_processing";
+  // shared by the desktop table and the phone cards of 民眾回報
+  const anyPii = detail.reports.some((r) => r.reporter_name || r.reporter_contact || r.reporter_email || r.pii_hidden);
+  const reporterInfo = (r: CaseDetail["reports"][number]) => (
+    <>
+      {ROLE_LABEL[r.reporter_role] || r.reporter_role}
+      {!anyPii ? null : detail.pii_visible ? (
+        <div className="break-all text-[14px] text-[var(--ink-2)]">
+          {[r.reporter_name, r.reporter_contact, r.reporter_email].filter(Boolean).join(" · ") || (r.has_identity ? "未留聯絡資料" : "匿名")}
+        </div>
+      ) : r.pii_hidden ? (
+        <div className="text-[13px] text-[var(--muted)]">已留聯絡資料（不可檢視）</div>
+      ) : null}
+      {r.notify_opt_in ? <div className="text-[13px] text-[var(--st-active)]">訂閱進度通知</div> : null}
+    </>
+  );
+  const reportAction = (r: CaseDetail["reports"][number]) =>
+    r.status !== "rejected" ? (
+      officer ? (
+        <button type="button" className="af-btn af-btn-ghost" disabled={busy === `rej-${r.id}`} onClick={() => window.confirm("排除這筆回報？（判定不可信，不再計入此案件）") && run(`rej-${r.id}`, () => api.rejectReport(r.id, "承辦判定不可信"))}>
+          排除
+        </button>
+      ) : null
+    ) : (
+      <span className="text-[13px] text-[var(--muted)]">已排除</span>
+    );
+
 
   return (
     <ConsoleShell wide crumbs={[{ href: "/console", label: "災害平台" }, { href: `/console/platforms/${id}`, label: "平台後台" }, { label: c.case_number }]}>
@@ -216,7 +242,7 @@ export default function CaseWorkbenchPage() {
             <Panel title="審核：這件災情要怎麼處理？" accent="var(--st-pending)">
               {officer ? (
                 <>
-                  <p className="text-[15px] text-[var(--ink-2)]">請先檢視右側的民眾回報與照片，再決定處理方式。決定後才會進入案件佇列，並通知訂閱進度的民眾。</p>
+                  <p className="text-[15px] text-[var(--ink-2)]">請先檢視民眾回報與照片（手機版在下方），再決定處理方式。決定後才會進入案件佇列，並通知訂閱進度的民眾。</p>
                   <textarea className="af-input mt-3" placeholder="審核說明（選填，公開於處理時間軸）" value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} maxLength={500} />
                   <div className="mt-3 grid gap-2.5">
                     {DECISIONS.map((d) => (
@@ -361,7 +387,7 @@ export default function CaseWorkbenchPage() {
                 </dl>
               )}
               <details className="mt-3">
-                <summary className="cursor-pointer text-[14px] text-[var(--muted)]">EMIC 欄位對照（暫定）</summary>
+                <summary className="cursor-pointer py-2 text-[14px] text-[var(--muted)]">EMIC 欄位對照（暫定）</summary>
                 <div className="overflow-x-auto">
                 <table className="af-table mt-2 min-w-[420px]">
                   <thead>
@@ -418,7 +444,7 @@ export default function CaseWorkbenchPage() {
                       不通過・退回
                     </button>
                   </div>
-                  <button type="button" className="mt-2 text-[14px] text-[var(--focus)] hover:underline" disabled={Boolean(busy)} onClick={() => reopen(c.id)}>
+                  <button type="button" className="mt-1 py-2 text-left text-[14px] text-[var(--focus)] hover:underline" disabled={Boolean(busy)} onClick={() => reopen(c.id)}>
                     仍需權責單位處理或要改判？退回審核重新選擇
                   </button>
                 </>
@@ -494,7 +520,30 @@ export default function CaseWorkbenchPage() {
                 您的角色不可檢視通報者個人資料。
               </div>
             )}
-            <div className="overflow-x-auto">
+            {/* phones: cards, so 地點／回報者／排除 are not hidden behind a sideways scroll */}
+            <ul className="divide-y md:hidden" style={{ borderColor: "var(--line)" }}>
+              {detail.reports.map((r) => (
+                <li key={r.id} className={`px-4 py-3 ${r.status === "rejected" ? "opacity-50" : ""}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">
+                        {CATEGORY_LABEL[r.category] || r.category}
+                        <span className="ml-2 font-mono text-[13px] font-normal text-[var(--muted)]">{fmtTime(r.created_at)}</span>
+                      </div>
+                      <div className="text-[15px] text-[var(--ink-2)]">{r.description || "（無描述）"}</div>
+                    </div>
+                    <div className="flex-none">{reportAction(r)}</div>
+                  </div>
+                  <div className="mt-1.5 text-[14px] text-[var(--ink-2)]">
+                    {r.address || r.town || "—"}
+                    {r.lat != null ? <span className="ml-1.5 font-mono text-[12.5px] text-[var(--muted)]">{r.lat.toFixed(5)}, {r.lon?.toFixed(5)}</span> : null}
+                    {r.photo_count ? <span className="ml-1.5 text-[13px] text-[var(--muted)]">· {r.photo_count} 張照片</span> : null}
+                  </div>
+                  <div className="mt-1 text-[14px]">{reporterInfo(r)}</div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
               <table className="af-table min-w-[680px]">
                 <thead>
                   <tr>
@@ -522,28 +571,8 @@ export default function CaseWorkbenchPage() {
                           </div>
                         ) : null}
                       </td>
-                      <td className="text-[15px]">
-                        {ROLE_LABEL[r.reporter_role] || r.reporter_role}
-                        {!detail.reports.some((r) => r.reporter_name || r.reporter_contact || r.reporter_email || r.pii_hidden) ? null : detail.pii_visible ? (
-                          <div className="text-[14px] text-[var(--ink-2)]">
-                            {[r.reporter_name, r.reporter_contact, r.reporter_email].filter(Boolean).join(" · ") || (r.has_identity ? "未留聯絡資料" : "匿名")}
-                          </div>
-                        ) : r.pii_hidden ? (
-                          <div className="text-[13px] text-[var(--muted)]">已留聯絡資料（不可檢視）</div>
-                        ) : null}
-                        {r.notify_opt_in ? <div className="text-[13px] text-[var(--st-active)]">訂閱進度通知</div> : null}
-                      </td>
-                      <td className="text-right">
-                        {r.status !== "rejected" ? (
-                          officer ? (
-                            <button type="button" className="af-btn af-btn-ghost" disabled={busy === `rej-${r.id}`} onClick={() => run(`rej-${r.id}`, () => api.rejectReport(r.id, "承辦判定不可信"))}>
-                              排除
-                            </button>
-                          ) : null
-                        ) : (
-                          <span className="text-[13px] text-[var(--muted)]">已排除</span>
-                        )}
-                      </td>
+                      <td className="text-[15px]">{reporterInfo(r)}</td>
+                      <td className="text-right">{reportAction(r)}</td>
                     </tr>
                   ))}
                 </tbody>

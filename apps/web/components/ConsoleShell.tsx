@@ -170,7 +170,7 @@ export default function ConsoleShell({ children, title, crumbs, wide = false }: 
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1.5">
                 {c.href ? (
-                  <Link href={c.href} className="hover:text-[var(--ink)]">
+                  <Link href={c.href} className="-my-2 inline-block py-2 hover:text-[var(--ink)]">
                     {c.label}
                   </Link>
                 ) : (

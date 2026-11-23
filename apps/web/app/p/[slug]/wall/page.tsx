@@ -83,12 +83,12 @@ export default function WallPage() {
 
   return (
     <div className="af-wall">
-      <header className="flex items-center justify-between px-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-        <div className="flex items-center gap-4">
+      <header className="flex items-center justify-between gap-3 px-3 sm:px-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <BrandMark size={36} inverted />
-          <div>
-            <div className="text-[13px] tracking-[0.14em] text-white/50">{platform?.county ? `${platform.county}政府 · 災害應變中心` : "AidFlow"}</div>
-            <div className="text-[19px] font-semibold leading-tight">{platform?.name || "災情態勢"}</div>
+          <div className="min-w-0">
+            <div className="hidden truncate text-[13px] tracking-[0.14em] text-white/50 sm:block">{platform?.county ? `${platform.county}政府 · 災害應變中心` : "AidFlow"}</div>
+            <div className="truncate text-[17px] font-semibold leading-tight sm:text-[19px]">{platform?.name || "災情態勢"}</div>
           </div>
           {situation ? (
             <div className="ml-6 hidden items-center gap-6 md:flex">
@@ -109,12 +109,12 @@ export default function WallPage() {
             </div>
           ) : null}
         </div>
-        <div className="flex items-center gap-4 text-right">
+        <div className="flex flex-none items-center gap-3 text-right sm:gap-4">
           <div>
-            <div className="font-mono text-[24px] font-semibold leading-none tabular-nums">{clock}</div>
-            <div className="mt-0.5 text-[13px] text-white/55">近 1 小時 {situation?.reports_last_hour ?? 0} 筆通報</div>
+            <div className="font-mono text-[18px] font-semibold leading-none tabular-nums sm:text-[24px]">{clock}</div>
+            <div className="mt-0.5 hidden text-[13px] text-white/55 sm:block">近 1 小時 {situation?.reports_last_hour ?? 0} 筆通報</div>
           </div>
-          <Link href={`/p/${slug}`} className="rounded border border-white/15 px-2.5 py-1.5 text-[14px] text-white/70 hover:bg-white/10">
+          <Link href={`/p/${slug}`} className="whitespace-nowrap rounded border border-white/15 px-3 py-2 text-[14px] text-white/70 hover:bg-white/10">
             離開
           </Link>
         </div>
@@ -127,10 +127,10 @@ export default function WallPage() {
           <Skeleton className="absolute inset-0 !rounded-none" />
         )}
 
-        <aside className="pointer-events-none absolute bottom-4 right-4 top-4 flex w-[400px] flex-col gap-3">
+        <aside className="pointer-events-none absolute bottom-3 left-3 right-3 top-[38%] flex flex-col gap-3 sm:bottom-4 sm:left-auto sm:right-4 sm:top-4 sm:w-[400px]">
           {situation ? (
-            <div className="af-wall-panel pointer-events-auto p-4">
-              <div className="mb-2 flex items-baseline justify-between">
+            <div className="af-wall-panel pointer-events-auto p-3 sm:p-4">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
                 <div className="text-[13px] tracking-[0.14em] text-white/50">態勢摘要</div>
                 <div className="text-[14px] text-white/55">
                   {situation.trend_direction === "rising" ? "通報增加中" : situation.trend_direction === "falling" ? "通報趨緩" : "通報平穩"} · 近 24 小時 {situation.reports_last_24h} 筆
@@ -145,15 +145,15 @@ export default function WallPage() {
             </div>
           ) : null}
 
-          <div className="af-wall-panel pointer-events-auto flex min-h-0 flex-col p-4">
+          <div className="af-wall-panel pointer-events-auto flex min-h-0 flex-1 flex-col p-3 sm:flex-initial sm:p-4">
             <div className="mb-3 flex items-center gap-1 border-b border-white/10 pb-2">
               {PANELS.map((p) => (
-                <button key={p} type="button" onClick={() => setPanel(p)} className={`rounded px-2.5 py-1 text-[15px] transition ${p === panel ? "bg-white/12 font-semibold text-white" : "text-white/55 hover:text-white/80"}`}>
+                <button key={p} type="button" onClick={() => setPanel(p)} className={`whitespace-nowrap rounded px-2.5 py-2 text-[15px] transition sm:py-1 ${p === panel ? "bg-white/12 font-semibold text-white" : "text-white/55 hover:text-white/80"}`}>
                   {PANEL_TITLE[p]}
                 </button>
               ))}
             </div>
-            <div key={panel} className="af-wall-enter min-h-0 overflow-hidden">
+            <div key={panel} className="af-wall-enter min-h-0 overflow-y-auto sm:overflow-hidden">
               {panel === "cases" ? (
                 <ul className="space-y-1.5">
                   {cases.map((c) => (

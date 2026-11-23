@@ -66,7 +66,7 @@ export default function HomePage() {
       <header className="border-b sm:hidden" style={{ background: "var(--surface)", borderColor: "var(--line)" }}>
         <div className="flex items-center justify-between gap-2 px-3 py-2.5">
           <BrandLockup subtitle="災情通報與處理平台" size={30} />
-          <Link href={signedIn ? "/console" : "/login"} className="text-[14px] text-[var(--focus)] hover:underline">
+          <Link href={signedIn ? "/console" : "/login"} className="-my-2 inline-block py-2 pl-2 text-[14px] text-[var(--focus)] hover:underline">
             {signedIn ? "後台" : "政府人員登入"}
           </Link>
         </div>
@@ -164,10 +164,10 @@ export default function HomePage() {
 
       <footer className="border-t" style={{ background: "var(--surface)", borderColor: "var(--line)" }}>
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-5 text-[14px] text-[var(--muted)]">
-          <span>消防救護 <a href="tel:119" className="-my-1 inline-block px-1 py-1 font-semibold text-[var(--ink-2)]">119</a></span>
-          <span>警察 <a href="tel:110" className="font-semibold text-[var(--ink-2)]">110</a></span>
+          <span>消防救護 <a href="tel:119" className="-my-2.5 inline-block px-1.5 py-2.5 font-semibold text-[var(--ink-2)]">119</a></span>
+          <span>警察 <a href="tel:110" className="-my-2.5 inline-block px-1.5 py-2.5 font-semibold text-[var(--ink-2)]">110</a></span>
           <span className="ml-auto">本站資訊以各主管機關正式公告為準。公開內容已去識別化。</span>
-          <Link href="/login" className="text-[var(--focus)] hover:underline">
+          <Link href="/login" className="-my-2 inline-block py-2 text-[var(--focus)] hover:underline">
             政府人員登入
           </Link>
         </div>

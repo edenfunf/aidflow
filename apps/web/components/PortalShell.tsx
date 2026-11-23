@@ -71,7 +71,7 @@ export default function PortalShell({ platform, slug, children, fullBleed = fals
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
           {(platform?.contacts || []).map((c) => (
             <span key={c.name}>
-              {c.name} <a href={`tel:${c.phone}`} className="font-semibold text-[var(--ink-2)]">{c.phone}</a>
+              {c.name} <a href={`tel:${c.phone}`} className="-my-2.5 inline-block px-1.5 py-2.5 font-semibold text-[var(--ink-2)]">{c.phone}</a>
             </span>
           ))}
           <span className="ml-auto">本站資訊以各主管機關正式公告為準。公開內容已去識別化。</span>

@@ -181,7 +181,7 @@ export default function LinePanel({ platformId, canManage, onChange }: { platfor
           <div className="mt-2 text-[15px] text-[var(--muted)]">尚無通知紀錄。</div>
         ) : (
           <div className="mt-2 overflow-x-auto">
-            <table className="af-table">
+            <table className="af-table af-table-stack">
               <thead>
                 <tr>
                   <th>時間</th>

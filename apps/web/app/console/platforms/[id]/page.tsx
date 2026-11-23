@@ -437,7 +437,7 @@ export default function PlatformConsolePage() {
                 <div className="p-5 text-[15px] text-[var(--muted)]">目前沒有尚未成案的回報地點。</div>
               ) : (
                 <div className="overflow-x-auto">
-                <table className="af-table min-w-[640px]">
+                <table className="af-table af-table-stack min-w-[640px]">
                   <thead>
                     <tr>
                       <th>災情</th>
@@ -476,7 +476,7 @@ export default function PlatformConsolePage() {
             ) : null}
             {tab === "reports" ? (
               <div className="overflow-x-auto">
-              <table className="af-table min-w-[720px]">
+              <table className="af-table af-table-stack min-w-[720px]">
                 <thead>
                   <tr>
                     <th>時間</th>
@@ -535,7 +535,7 @@ export default function PlatformConsolePage() {
             ) : null}
             {tab === "layers" ? (
               <div className="overflow-x-auto">
-              <table className="af-table min-w-[560px]">
+              <table className="af-table af-table-stack min-w-[560px]">
                 <thead>
                   <tr>
                     <th>圖層</th>

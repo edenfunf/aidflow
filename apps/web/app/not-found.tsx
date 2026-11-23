@@ -15,7 +15,7 @@ export default function NotFound() {
         </Link>
       </div>
       <p className="mt-6 text-[15px] text-[var(--muted)]">
-        災情危及生命請撥打 <a href="tel:119" className="font-semibold underline">119</a>。
+        災情危及生命請撥打 <a href="tel:119" className="-my-2.5 inline-block px-1 py-2.5 font-semibold underline">119</a>。
       </p>
     </main>
   );

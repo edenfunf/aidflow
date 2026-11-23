@@ -47,13 +47,14 @@ function describe(e: AuditEvent): { label: string; detail: string; color: string
   } else if (e.event_type === "case.created" || e.event_type === "case.threshold_reached") {
     detail = `${caseNo}${p.title || ""}`;
     color = "#b54708";
-  } else if (e.event_type === "report.received") {
-    detail = `${p.category_label || p.category || ""}${p.town ? ` · ${p.town}` : ""}`;
+  } else if (base === "report.received") {
+    detail = p.category_label || p.category ? `${p.category_label || p.category}${p.town ? ` · ${p.town}` : ""}` : `${caseNo}${p.title || ""}`;
     color = "#98a2b3";
   } else {
     detail = String(p.note || p.title || p.unit_name || p.name || "");
   }
-  return { label: FEED_LABEL[e.event_type] || e.event_type, detail, color, icon, caseId: p.case_id as string | undefined };
+  // case events are published as "case.<type>" (e.g. case.report.received): fall back to the bare type
+  return { label: FEED_LABEL[e.event_type] || FEED_LABEL[base] || e.event_type, detail, color, icon, caseId: p.case_id as string | undefined };
 }
 
 const EVENT_ICONS_MAP: Record<string, string> = {

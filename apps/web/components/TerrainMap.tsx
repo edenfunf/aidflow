@@ -690,7 +690,9 @@ function TerrainMapImpl({
       features.forEach((f) => b.extend(f.geometry.coordinates as [number, number]));
       const wide = map.getContainer().clientWidth >= 1024;
       map.fitBounds(b, {
-        padding: fitPadding || (wide ? { top: 110, bottom: 120, left: 60, right: 380 } : { top: 150, bottom: 80, left: 30, right: 30 }),
+        // fitPadding describes desktop overlays (side panels); on a phone-width map it
+        // would leave almost no room and the fit zooms out to all of Taiwan
+        padding: wide ? fitPadding || { top: 110, bottom: 120, left: 60, right: 380 } : { top: 150, bottom: 80, left: 30, right: 30 },
         maxZoom: 12.5,
         duration: REDUCED_MOTION ? 0 : 2600,
         pitch: threeD ? PITCH_3D : 0,

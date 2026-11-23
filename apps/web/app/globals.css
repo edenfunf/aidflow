@@ -1017,3 +1017,36 @@ a.af-panel:hover,
   background: var(--st-done);
   color: #fff;
 }
+
+/* phones: a table whose rows stack into cards (every column stays reachable
+   without a sideways scroll). Opt in with .af-table-stack. */
+@media (max-width: 767px) {
+  .af-table-stack {
+    min-width: 0 !important;
+  }
+  .af-table-stack thead {
+    display: none;
+  }
+  .af-table-stack tr {
+    display: block;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  /* first column is the row's title; the rest flow inline and wrap */
+  .af-table-stack td {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 0.9rem;
+    padding: 0.2rem 0 !important;
+    border: 0 !important;
+    text-align: left !important;
+  }
+  .af-table-stack td:first-child,
+  .af-table-stack td:last-child {
+    display: block;
+    margin-right: 0;
+  }
+  .af-table-stack td .justify-end {
+    justify-content: flex-start;
+  }
+}
