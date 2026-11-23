@@ -45,6 +45,8 @@ export interface TerrainMapProps {
   minimal?: boolean;
   /** screen-space padding (px) kept clear when fitting to data; defaults suit the portal layout */
   fitPadding?: { top: number; bottom: number; left: number; right: number };
+  /** like fitPadding, for maps narrower than 1024px (e.g. a phone with a panel over the lower part) */
+  fitPaddingNarrow?: { top: number; bottom: number; left: number; right: number };
   /** keep this many pixels on the left out of the camera's reckoning (hero card) */
   padLeft?: number;
   className?: string;
@@ -386,6 +388,7 @@ function TerrainMapImpl({
   minimal = false,
   padLeft = 0,
   fitPadding,
+  fitPaddingNarrow,
   className = "",
   onReady,
 }: TerrainMapProps) {
@@ -692,7 +695,7 @@ function TerrainMapImpl({
       map.fitBounds(b, {
         // fitPadding describes desktop overlays (side panels); on a phone-width map it
         // would leave almost no room and the fit zooms out to all of Taiwan
-        padding: wide ? fitPadding || { top: 110, bottom: 120, left: 60, right: 380 } : { top: 150, bottom: 80, left: 30, right: 30 },
+        padding: wide ? fitPadding || { top: 110, bottom: 120, left: 60, right: 380 } : fitPaddingNarrow || { top: 150, bottom: 80, left: 30, right: 30 },
         maxZoom: 12.5,
         duration: REDUCED_MOTION ? 0 : 2600,
         pitch: threeD ? PITCH_3D : 0,

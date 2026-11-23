@@ -122,7 +122,7 @@ export default function WallPage() {
 
       <div className="relative min-h-0">
         {platform ? (
-          <TerrainMap center={platform.map.center} zoom={platform.map.zoom} features={features} visible={wallVisible} enabledLayers={layers} threeD orbit minimal fitToData className="absolute inset-0" />
+          <TerrainMap center={platform.map.center} zoom={platform.map.zoom} features={features} visible={wallVisible} enabledLayers={layers} threeD orbit minimal fitToData fitPaddingNarrow={{ top: 40, bottom: typeof window === "undefined" ? 400 : Math.round(window.innerHeight * 0.62), left: 30, right: 30 }} className="absolute inset-0" />
         ) : (
           <Skeleton className="absolute inset-0 !rounded-none" />
         )}
@@ -145,7 +145,7 @@ export default function WallPage() {
             </div>
           ) : null}
 
-          <div className="af-wall-panel pointer-events-auto flex min-h-0 flex-1 flex-col p-3 sm:flex-initial sm:p-4">
+          <div className="af-wall-panel pointer-events-auto flex min-h-0 flex-col p-3 sm:p-4">
             <div className="mb-3 flex items-center gap-1 border-b border-white/10 pb-2">
               {PANELS.map((p) => (
                 <button key={p} type="button" onClick={() => setPanel(p)} className={`whitespace-nowrap rounded px-2.5 py-2 text-[15px] transition sm:py-1 ${p === panel ? "bg-white/12 font-semibold text-white" : "text-white/55 hover:text-white/80"}`}>
